@@ -34,21 +34,28 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenApiKeyModal,
   hasCustomApiKey,
 }) => {
-  // If user adds public/logo.png on GitHub, it will seamlessly render their custom logo
-  const [customLogoAvailable, setCustomLogoAvailable] = useState<boolean | null>(null);
+  // Support custom logo (SVG first, then PNG, with fallback)
+  const [logoSrc, setLogoSrc] = useState<string>("/logo.svg");
+  const [hasLogo, setHasLogo] = useState<boolean>(true);
 
   return (
     <header className="border-b border-neutral-800/80 bg-neutral-950/80 backdrop-blur-md sticky top-0 z-30">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex flex-col md:flex-row md:items-center justify-between gap-4">
         {/* Brand */}
         <div className="flex items-center gap-3">
-          {customLogoAvailable ? (
+          {hasLogo ? (
             <div className="flex items-center gap-2.5">
               <img
-                src="/logo.png"
+                src={logoSrc}
                 alt="AST Studio"
-                className="h-9 sm:h-10 w-auto object-contain cursor-pointer"
-                onError={() => setCustomLogoAvailable(false)}
+                className="h-9 sm:h-10 w-auto object-contain cursor-pointer drop-shadow-[0_2px_10px_rgba(99,102,241,0.2)]"
+                onError={() => {
+                  if (logoSrc === "/logo.svg") {
+                    setLogoSrc("/logo.png");
+                  } else {
+                    setHasLogo(false);
+                  }
+                }}
               />
               <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -57,17 +64,6 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           ) : (
             <>
-              {/* Invisible probe to check if /logo.png exists in public/ */}
-              {customLogoAvailable === null && (
-                <img
-                  src="/logo.png"
-                  alt=""
-                  className="hidden"
-                  onLoad={() => setCustomLogoAvailable(true)}
-                  onError={() => setCustomLogoAvailable(false)}
-                />
-              )}
-
               {/* The beloved original gradient icon box */}
               <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 p-0.5 shadow-lg shadow-indigo-600/25 flex items-center justify-center shrink-0">
                 <div className="w-full h-full bg-neutral-950 rounded-[10px] flex items-center justify-center">

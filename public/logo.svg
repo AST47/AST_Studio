@@ -36,6 +36,8 @@
     }
   </style>
 
+  <!-- Transparent Background: No solid black path -->
+
   <!-- Wave Badge Icon -->
   <g filter="url(#badgeShadow)">
     <path fill-rule="evenodd" class="b" d="m42 20h36c12.2 0 22 9.8 22 22v36c0 12.2-9.8 22-22 22h-36c-12.2 0-22-9.8-22-22v-36c0-12.2 9.8-22 22-22z"/>
