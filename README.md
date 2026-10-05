@@ -1,6 +1,6 @@
 <div align="center">
   <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-  <h1>AST Studio (Voice_Maker)</h1>
+  <h1>AST_Studio</h1>
   <p><strong>Professional Neural Text-to-Speech & Voice Creation Platform powered by Gemini 3.8 TTS</strong></p>
 </div>
 
@@ -8,7 +8,17 @@
 
 ## 🎙️ Overview
 
-**AST Studio** (Repository: `Voice_Maker`) is a full-featured neural speech production platform built with Google Gemini's state-of-the-art TTS audio generation models (`gemini-3.8-flash-tts` & `gemini-3.8-flash-lite-tts`).
+**AST_Studio** is a full-featured neural speech production platform built with Google Gemini's state-of-the-art TTS audio generation models (`gemini-3.8-flash-tts` & `gemini-3.8-flash-lite-tts`).
+
+It provides real-time studio-grade speech generation, expressive voice directing, multilingual phonetics (Spanish, English, Arabic, French, German, Italian, Portuguese, Japanese, Turkish), and multi-speaker dialogue creation with 24kHz studio WAV audio exports.
+
+---
+
+## 🚀 Live on GitHub Pages
+
+This repository includes an automated GitHub Actions deployment workflow (`.github/workflows/deploy.yml`):
+- Whenever you push changes to `main`, GitHub Actions automatically builds and deploys **AST_Studio** directly to **GitHub Pages**.
+- Users can enter their free [Google Gemini API Key](https://aistudio.google.com/apikey) via the built-in **API Key** settings drawer (stored strictly on their client browser).
 
 It provides real-time studio-grade speech generation, expressive voice directing, and multi-speaker podcast/story scene creation with 24kHz studio WAV audio exports.
 

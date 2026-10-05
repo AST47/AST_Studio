@@ -11,8 +11,10 @@ import { VoiceCatalog } from "./components/VoiceCatalog";
 import { HistoryDrawer } from "./components/HistoryDrawer";
 import { AudioPlayer } from "./components/AudioPlayer";
 import { QuotaHUD } from "./components/QuotaHUD";
+import { ApiKeyModal } from "./components/ApiKeyModal";
 import { VoiceName, GeneratedAudioItem, QuotaStatus } from "./types/tts";
 import { checkServerHealth, fetchQuotaStatus } from "./services/api";
+import { getStoredApiKey } from "./services/clientGeminiService";
 import { SCRIPT_TEMPLATES } from "./data/voices";
 import {
   Sparkles,
@@ -22,6 +24,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   Flame,
+  Key,
 } from "lucide-react";
 
 const STORAGE_KEY = "voxstudio_audio_history_v1";
@@ -34,6 +37,8 @@ export default function App() {
   const [historyItems, setHistoryItems] = useState<GeneratedAudioItem[]>([]);
   const [serverStatus, setServerStatus] = useState<string>("checking");
   const [hasApiKey, setHasApiKey] = useState<boolean>(true);
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
+  const [storedClientKey, setStoredClientKey] = useState<string>(getStoredApiKey());
   const [quotaStatus, setQuotaStatus] = useState<QuotaStatus>({
     requestsInLastMinute: 0,
     freeTierRpmLimit: 5,
@@ -143,20 +148,31 @@ export default function App() {
         historyCount={historyItems.length}
         quota={quotaStatus}
         onRefreshQuota={refreshQuota}
+        onOpenApiKeyModal={() => setIsApiKeyModalOpen(true)}
+        hasCustomApiKey={!!storedClientKey}
       />
 
       {/* Main Studio Body */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {/* Banner if API key not found */}
-        {!hasApiKey && serverStatus !== "checking" && (
-          <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-800/80 text-amber-200 text-xs flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-            <div>
-              <strong className="font-semibold block text-sm text-amber-100 mb-0.5">
-                Gemini API Key Required
-              </strong>
-              Speech synthesis uses Gemini 3.8 TTS. Ensure <code className="bg-amber-900/50 px-1 py-0.5 rounded text-amber-200 font-mono">GEMINI_API_KEY</code> is defined in your environment secrets.
+        {/* Banner if API key not found and no client key */}
+        {!hasApiKey && !storedClientKey && serverStatus !== "checking" && (
+          <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-800/80 text-amber-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <strong className="font-semibold block text-sm text-amber-100 mb-0.5">
+                  Gemini API Key Required (Static GitHub Pages)
+                </strong>
+                Speech synthesis uses Gemini 3.8 TTS. Connect your free Google Gemini API key to generate audio.
+              </div>
             </div>
+            <button
+              onClick={() => setIsApiKeyModalOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-semibold text-xs transition-colors shrink-0 flex items-center gap-1.5 cursor-pointer shadow-md"
+            >
+              <Key className="w-3.5 h-3.5" />
+              <span>Connect API Key</span>
+            </button>
           </div>
         )}
 
@@ -233,6 +249,13 @@ export default function App() {
           </div>
         </footer>
       </main>
+
+      {/* Gemini API Key Settings Modal (for static GitHub Pages) */}
+      <ApiKeyModal
+        isOpen={isApiKeyModalOpen}
+        onClose={() => setIsApiKeyModalOpen(false)}
+        onKeyChanged={() => setStoredClientKey(getStoredApiKey())}
+      />
     </div>
   );
 }

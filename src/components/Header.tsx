@@ -8,6 +8,7 @@ import {
   Radio,
   Sliders,
   AudioWaveform,
+  Key,
 } from "lucide-react";
 import { QuotaHUD } from "./QuotaHUD";
 import { QuotaStatus } from "../types/tts";
@@ -20,6 +21,8 @@ interface HeaderProps {
   historyCount: number;
   quota?: QuotaStatus;
   onRefreshQuota?: () => void;
+  onOpenApiKeyModal?: () => void;
+  hasCustomApiKey?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -28,6 +31,8 @@ export const Header: React.FC<HeaderProps> = ({
   historyCount,
   quota,
   onRefreshQuota,
+  onOpenApiKeyModal,
+  hasCustomApiKey,
 }) => {
   // If user adds public/logo.png on GitHub, it will seamlessly render their custom logo
   const [customLogoAvailable, setCustomLogoAvailable] = useState<boolean | null>(null);
@@ -88,8 +93,25 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* Right side: Quota HUD Pill & Studio Navigation Tabs */}
-        <div className="flex flex-wrap items-center gap-2.5">
+        {/* Right side: API Key button, Quota HUD Pill & Studio Navigation Tabs */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Gemini API Key Settings Button */}
+          {onOpenApiKeyModal && (
+            <button
+              onClick={onOpenApiKeyModal}
+              title="Configure Google Gemini API Key (Required for static GitHub Pages)"
+              className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-neutral-900/90 hover:bg-neutral-800 text-neutral-300 border border-neutral-800 flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Key className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="hidden sm:inline">API Key</span>
+              {hasCustomApiKey ? (
+                <span className="w-2 h-2 rounded-full bg-emerald-400" title="API Key Connected" />
+              ) : (
+                <span className="w-2 h-2 rounded-full bg-amber-400" title="Server Key Active" />
+              )}
+            </button>
+          )}
+
           {quota && (
             <QuotaHUD quota={quota} onRefresh={onRefreshQuota} variant="header-pill" />
           )}

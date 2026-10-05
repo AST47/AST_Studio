@@ -40,6 +40,7 @@ function apiServerPlugin(): Plugin {
 
 export default defineConfig(() => {
   return {
+    base: './',
     plugins: [react(), tailwindcss(), apiServerPlugin()],
     resolve: {
       alias: {

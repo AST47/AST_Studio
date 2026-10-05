@@ -1,17 +1,22 @@
-import { VoiceName, DialogueTurn, QuotaStatus } from "../types/tts";
+import { VoiceName, DialogueTurn, QuotaStatus, SupportedLanguage } from "../types/tts";
+import {
+  generateClientSpeech,
+  enhanceClientScript,
+  getStoredApiKey,
+} from "./clientGeminiService";
 
 export interface GenerateSingleTtsRequest {
   mode: "single";
   text: string;
   voice: VoiceName;
   style?: string;
-  language?: string;
+  language?: SupportedLanguage;
   model?: "gemini-3.8-flash-lite-tts" | "gemini-3.8-flash-tts";
 }
 
 export interface GenerateDialogueTtsRequest {
   mode: "dialogue";
-  language?: string;
+  language?: SupportedLanguage;
   turns: {
     speaker: string;
     voice: VoiceName;
@@ -53,23 +58,31 @@ export class ApiError extends Error {
 export async function requestTts(
   params: GenerateSingleTtsRequest | GenerateDialogueTtsRequest
 ): Promise<TtsResponse> {
-  const response = await fetch("/api/tts", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(params),
-  });
+  // If user provided a client-side API key and we are in static mode (or by preference), use client directly
+  const hasClientKey = !!getStoredApiKey();
 
-  const contentType = response.headers.get("content-type") || "";
+  try {
+    const response = await fetch("/api/tts", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(params),
+    });
 
-  if (!response.ok) {
-    let errorMessage = "Speech generation failed";
-    let isQuotaExceeded = false;
-    let details: string | undefined;
-    let retryDelaySeconds: number | undefined;
+    const contentType = response.headers.get("content-type") || "";
 
-    if (contentType.includes("application/json")) {
+    // If 404 on static host (like GitHub Pages where /api/tts doesn't exist), try client fallback
+    if (response.status === 404 || !contentType.includes("application/json")) {
+      return await generateClientSpeech(params as any);
+    }
+
+    if (!response.ok) {
+      let errorMessage = "Speech generation failed";
+      let isQuotaExceeded = false;
+      let details: string | undefined;
+      let retryDelaySeconds: number | undefined;
+
       try {
         const errData = await response.json();
         if (errData.error) errorMessage = errData.error;
@@ -79,43 +92,58 @@ export async function requestTts(
       } catch {
         errorMessage = `Server returned status ${response.status}`;
       }
-    } else {
-      const text = await response.text();
-      errorMessage = text.slice(0, 150) || `Server returned status ${response.status}`;
+
+      throw new ApiError(errorMessage, isQuotaExceeded, details, retryDelaySeconds);
     }
 
-    throw new ApiError(errorMessage, isQuotaExceeded, details, retryDelaySeconds);
+    return response.json();
+  } catch (err: any) {
+    if (err instanceof ApiError) {
+      throw err;
+    }
+    // Network failure or static environment without Express server
+    try {
+      return await generateClientSpeech(params as any);
+    } catch (clientErr: any) {
+      if (clientErr.message === "NO_API_KEY") {
+        throw new ApiError(
+          "API_KEY_REQUIRED",
+          false,
+          "Please click the 'API Key' button in the top bar to connect your Google Gemini API key for this static site."
+        );
+      }
+      const raw = clientErr?.message || String(clientErr);
+      const isQuota = raw.includes("429") || raw.includes("RESOURCE_EXHAUSTED");
+      throw new ApiError(raw, isQuota, isQuota ? "Gemini API rate limit reached. Please wait 30 seconds." : undefined);
+    }
   }
-
-  if (!contentType.includes("application/json")) {
-    const text = await response.text();
-    throw new ApiError(`Unexpected server response: ${text.slice(0, 80)}`, false);
-  }
-
-  return response.json();
 }
 
 export async function requestScriptEnhance(
   action: "polish" | "expressive" | "podcast" | "shorten" | "dramatic" | "accentuate",
   prompt: string
 ): Promise<string> {
-  const response = await fetch("/api/enhance-script", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ action, prompt }),
-  });
+  try {
+    const response = await fetch("/api/enhance-script", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ action, prompt }),
+    });
 
-  const contentType = response.headers.get("content-type") || "";
+    const contentType = response.headers.get("content-type") || "";
 
-  if (!response.ok) {
-    let errorMessage = "Script enhancement failed";
-    let isQuotaExceeded = false;
-    let details: string | undefined;
-    let retryDelaySeconds: number | undefined;
+    if (response.status === 404 || !contentType.includes("application/json")) {
+      return await enhanceClientScript(action, prompt);
+    }
 
-    if (contentType.includes("application/json")) {
+    if (!response.ok) {
+      let errorMessage = "Script enhancement failed";
+      let isQuotaExceeded = false;
+      let details: string | undefined;
+      let retryDelaySeconds: number | undefined;
+
       try {
         const errData = await response.json();
         if (errData.error) errorMessage = errData.error;
@@ -125,21 +153,27 @@ export async function requestScriptEnhance(
       } catch {
         errorMessage = `Server returned ${response.status}`;
       }
-    } else {
-      const text = await response.text();
-      errorMessage = text.slice(0, 150) || `Server returned ${response.status}`;
+
+      throw new ApiError(errorMessage, isQuotaExceeded, details, retryDelaySeconds);
     }
 
-    throw new ApiError(errorMessage, isQuotaExceeded, details, retryDelaySeconds);
+    const data = await response.json();
+    return data.result || "";
+  } catch (err: any) {
+    if (err instanceof ApiError) throw err;
+    try {
+      return await enhanceClientScript(action, prompt);
+    } catch (clientErr: any) {
+      if (clientErr.message === "NO_API_KEY") {
+        throw new ApiError(
+          "API_KEY_REQUIRED",
+          false,
+          "Please enter your Google Gemini API key to use AI Script Assistant on GitHub Pages."
+        );
+      }
+      throw clientErr;
+    }
   }
-
-  if (!contentType.includes("application/json")) {
-    const text = await response.text();
-    throw new ApiError(`Unexpected response from server: ${text.slice(0, 80)}`, false);
-  }
-
-  const data = await response.json();
-  return data.result || "";
 }
 
 export async function checkServerHealth(): Promise<{ status: string; hasApiKey: boolean }> {
