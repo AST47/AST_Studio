@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 120" width="600" height="120" fill="none">
+  <defs>
+    <!-- Border Gradient -->
+    <linearGradient id="boxGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#4f46e5" />
+      <stop offset="50%" stop-color="#9333ea" />
+      <stop offset="100%" stop-color="#ec4899" />
+    </linearGradient>
+
+    <!-- Studio Text Gradient -->
+    <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#818cf8" />
+      <stop offset="100%" stop-color="#c084fc" />
+    </linearGradient>
+
+    <!-- Drop Shadow Filter -->
+    <filter id="shadowFilter" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#6366f1" flood-opacity="0.25" />
+    </filter>
+
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800;900&amp;display=swap');
+      .title-font {
+        font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+        font-weight: 900;
+        letter-spacing: -0.03em;
+      }
+      .sub-font {
+        font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+        font-weight: 500;
+      }
+    </style>
+  </defs>
+
+  <!-- Dark Background preview canvas (transparent in actual use) -->
+  <rect width="600" height="120" fill="#0a0a0a" rx="16" />
+
+  <!-- 1. Wave Badge Icon -->
+  <g transform="translate(20, 20)">
+    <!-- Gradient Border -->
+    <rect x="0" y="0" width="80" height="80" rx="22" fill="url(#boxGrad)" filter="url(#shadowFilter)" />
+    <!-- Dark Inner -->
+    <rect x="3" y="3" width="74" height="74" rx="19" fill="#0a0a0a" />
+    <!-- Waveform Paths -->
+    <g transform="translate(22, 22) scale(1.5)" stroke="#818cf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <path d="M2 13a2 2 0 0 0 2-2V7a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0V4a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0v-4a2 2 0 0 1 2-2" />
+    </g>
+  </g>
+
+  <!-- 2. Typography: AST Studio -->
+  <g transform="translate(120, 62)">
+    <!-- "AST " in Solid Crisp White -->
+    <text x="0" y="0" fill="#FFFFFF" font-size="44" class="title-font">AST </text>
+
+    <!-- "Studio" in Indigo-to-Purple Gradient -->
+    <text x="96" y="0" fill="url(#textGrad)" font-size="44" class="title-font">Studio</text>
+
+    <!-- Subtitle -->
+    <text x="2" y="24" fill="#a3a3a3" font-size="14" class="sub-font">Neural Text-to-Speech &amp; Voice Production Suite</text>
+  </g>
+</svg>
