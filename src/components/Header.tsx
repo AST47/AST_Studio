@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Mic,
   Users,
@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { QuotaHUD } from "./QuotaHUD";
 import { QuotaStatus } from "../types/tts";
-import { AstLogo } from "./AstLogo";
 
 export type StudioTab = "solo" | "dialogue" | "catalog" | "history";
 
@@ -30,23 +29,63 @@ export const Header: React.FC<HeaderProps> = ({
   quota,
   onRefreshQuota,
 }) => {
+  // If user adds public/logo.png on GitHub, it will seamlessly render their custom logo
+  const [customLogoAvailable, setCustomLogoAvailable] = useState<boolean | null>(null);
+
   return (
     <header className="border-b border-neutral-800/80 bg-neutral-950/80 backdrop-blur-md sticky top-0 z-30">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        {/* Brand with recolored AST logo */}
+        {/* Brand */}
         <div className="flex items-center gap-3">
-          <div className="flex flex-col">
+          {customLogoAvailable ? (
             <div className="flex items-center gap-2.5">
-              <AstLogo className="h-7 sm:h-8 w-auto" showStudioText={true} />
+              <img
+                src="/logo.png"
+                alt="AST Studio"
+                className="h-9 sm:h-10 w-auto object-contain cursor-pointer"
+                onError={() => setCustomLogoAvailable(false)}
+              />
               <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 Gemini 3.8 TTS
               </span>
             </div>
-            <p className="text-[11px] text-neutral-400 hidden sm:block mt-0.5">
-              Neural Text-to-Speech & Voice Production Suite
-            </p>
-          </div>
+          ) : (
+            <>
+              {/* Invisible probe to check if /logo.png exists in public/ */}
+              {customLogoAvailable === null && (
+                <img
+                  src="/logo.png"
+                  alt=""
+                  className="hidden"
+                  onLoad={() => setCustomLogoAvailable(true)}
+                  onError={() => setCustomLogoAvailable(false)}
+                />
+              )}
+
+              {/* The beloved original gradient icon box */}
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 p-0.5 shadow-lg shadow-indigo-600/25 flex items-center justify-center shrink-0">
+                <div className="w-full h-full bg-neutral-950 rounded-[10px] flex items-center justify-center">
+                  <AudioWaveform className="w-5 h-5 text-indigo-400" />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-base sm:text-lg font-black tracking-tight text-white flex items-center gap-1.5">
+                    AST <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Studio</span>
+                  </h1>
+                  <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Gemini 3.8 TTS
+                  </span>
+                </div>
+                <p className="text-[11px] text-neutral-400 hidden sm:block mt-0.5">
+                  Neural Text-to-Speech & Voice Production Suite
+                </p>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Right side: Quota HUD Pill & Studio Navigation Tabs */}
