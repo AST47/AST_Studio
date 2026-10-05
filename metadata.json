@@ -1,0 +1,6 @@
+{
+  "name": "VoxStudio AI - Neural Text-to-Speech & Dialogue Studio",
+  "description": "Professional AI text-to-speech studio powered by Gemini 3.8. Create expressive solo narrations and multi-speaker dialogue with vocal bursts, custom styles, and studio audio controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

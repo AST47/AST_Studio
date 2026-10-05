@@ -1,0 +1,442 @@
+import React, { useEffect, useRef, useState, useMemo } from "react";
+import {
+  Play,
+  Pause,
+  RotateCcw,
+  Volume2,
+  VolumeX,
+  Download,
+  Share2,
+  Check,
+  FastForward,
+  Rewind,
+  Music2,
+  Sparkles,
+} from "lucide-react";
+import { GeneratedAudioItem } from "../types/tts";
+import { LANGUAGES } from "../data/languages";
+
+interface AudioPlayerProps {
+  item: GeneratedAudioItem | null;
+  onClear?: () => void;
+}
+
+export const AudioPlayer: React.FC<AudioPlayerProps> = ({ item }) => {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [playbackRate, setPlaybackRate] = useState(1);
+  const [volume, setVolume] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isLooping, setIsLooping] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // Generate synthetic waveform bars based on item id and text
+  const waveformBars = useMemo(() => {
+    if (!item) return [];
+    const count = 72;
+    const bars: number[] = [];
+    let seed = 0;
+    for (let i = 0; i < item.id.length; i++) {
+      seed = (seed * 31 + item.id.charCodeAt(i)) % 100000;
+    }
+    for (let i = 0; i < count; i++) {
+      seed = (seed * 9301 + 49297) % 233280;
+      const rnd = seed / 233280;
+      // create natural speech curve with peaks and troughs
+      const envelope = Math.sin((i / count) * Math.PI);
+      const val = Math.max(0.12, Math.min(0.98, envelope * (0.3 + 0.7 * rnd)));
+      bars.push(val);
+    }
+    return bars;
+  }, [item?.id]);
+
+  // Audio source URL
+  const audioSrc = useMemo(() => {
+    if (!item?.audioBase64) return "";
+    return `data:${item.mimeType || "audio/wav"};base64,${item.audioBase64}`;
+  }, [item?.audioBase64, item?.mimeType]);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.playbackRate = playbackRate;
+      audioRef.current.volume = isMuted ? 0 : volume;
+      audioRef.current.loop = isLooping;
+    }
+  }, [playbackRate, volume, isMuted, isLooping]);
+
+  // When item changes, reset and autoplay
+  useEffect(() => {
+    if (!item || !audioSrc) {
+      setIsPlaying(false);
+      setCurrentTime(0);
+      setDuration(0);
+      return;
+    }
+    setCurrentTime(0);
+    setIsPlaying(false);
+
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0;
+      audioRef.current.play().then(() => {
+        setIsPlaying(true);
+      }).catch(() => {
+        // Autoplay may be blocked by browser policy until interaction
+        setIsPlaying(false);
+      });
+    }
+  }, [item?.id, audioSrc]);
+
+  // Draw waveform canvas
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || waveformBars.length === 0) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    ctx.scale(dpr, dpr);
+
+    ctx.clearRect(0, 0, width, height);
+
+    const barCount = waveformBars.length;
+    const gap = 3;
+    const totalBarWidth = (width - (barCount - 1) * gap) / barCount;
+    const progress = duration > 0 ? currentTime / duration : 0;
+
+    waveformBars.forEach((amplitude, index) => {
+      const x = index * (totalBarWidth + gap);
+      const barHeight = Math.max(6, amplitude * (height - 12));
+      const y = (height - barHeight) / 2;
+      const barProgress = index / barCount;
+
+      const isPlayed = barProgress <= progress;
+
+      if (isPlayed) {
+        // Gradient for played portion
+        const grad = ctx.createLinearGradient(0, y, 0, y + barHeight);
+        grad.addColorStop(0, "#818cf8"); // indigo-400
+        grad.addColorStop(1, "#6366f1"); // indigo-500
+        ctx.fillStyle = grad;
+      } else {
+        ctx.fillStyle = "rgba(75, 85, 99, 0.4)"; // neutral-600
+      }
+
+      ctx.beginPath();
+      ctx.roundRect(x, y, totalBarWidth, barHeight, 2);
+      ctx.fill();
+    });
+  }, [waveformBars, currentTime, duration]);
+
+  const togglePlay = () => {
+    if (!audioRef.current || !item) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      audioRef.current.play().then(() => setIsPlaying(true)).catch(console.error);
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (audioRef.current) {
+      setCurrentTime(audioRef.current.currentTime);
+    }
+  };
+
+  const handleLoadedMetadata = () => {
+    if (audioRef.current) {
+      setDuration(audioRef.current.duration || item?.duration || 0);
+    }
+  };
+
+  const handleEnded = () => {
+    if (!isLooping) {
+      setIsPlaying(false);
+      setCurrentTime(0);
+    }
+  };
+
+  const handleWaveformClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas || !audioRef.current || !duration) return;
+    const rect = canvas.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const pct = Math.max(0, Math.min(1, clickX / rect.width));
+    const targetTime = pct * duration;
+    audioRef.current.currentTime = targetTime;
+    setCurrentTime(targetTime);
+  };
+
+  const seekRelative = (delta: number) => {
+    if (!audioRef.current || !duration) return;
+    const target = Math.max(0, Math.min(duration, audioRef.current.currentTime + delta));
+    audioRef.current.currentTime = target;
+    setCurrentTime(target);
+  };
+
+  const handleDownload = () => {
+    if (!item || !audioSrc) return;
+    const a = document.createElement("a");
+    a.href = audioSrc;
+    const safeTitle = (item.title || "voxstudio-ai-speech")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .slice(0, 32);
+    a.download = `${safeTitle}-${Date.now()}.wav`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const handleCopyBase64 = () => {
+    if (!item?.audioBase64) return;
+    navigator.clipboard.writeText(item.audioBase64);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const formatTime = (secs: number) => {
+    if (isNaN(secs) || secs < 0) return "0:00";
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}:${s < 10 ? "0" : ""}${s}`;
+  };
+
+  if (!item) {
+    return (
+      <div className="bg-neutral-900/60 border border-neutral-800/80 rounded-2xl p-6 text-center backdrop-blur-sm">
+        <div className="w-12 h-12 rounded-full bg-neutral-800/70 border border-neutral-700/50 flex items-center justify-center mx-auto mb-3 text-neutral-400">
+          <Music2 className="w-6 h-6 text-indigo-400/80" />
+        </div>
+        <h4 className="text-sm font-semibold text-neutral-200">Studio Audio Deck Idle</h4>
+        <p className="text-xs text-neutral-400 mt-1 max-w-sm mx-auto">
+          Write or select a script above and click <span className="text-indigo-400 font-medium">Generate Speech</span> to render neural audio.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-neutral-900/90 border border-neutral-800 rounded-2xl p-5 shadow-2xl backdrop-blur-md relative overflow-hidden transition-all">
+      {/* Background audio glow */}
+      {isPlaying && (
+        <div className="absolute -top-16 -right-16 w-56 h-56 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none animate-pulse" />
+      )}
+
+      {/* Hidden audio element */}
+      <audio
+        ref={audioRef}
+        src={audioSrc}
+        onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
+        onEnded={handleEnded}
+      />
+
+      {/* Track Info Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-neutral-800/80">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold tracking-wider uppercase border ${
+                item.voice?.includes("boy") || item.voice?.includes("girl")
+                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                  : "bg-indigo-500/20 text-indigo-300 border-indigo-500/30"
+              }`}
+            >
+              <Sparkles className="w-3 h-3 text-indigo-400" />
+              {item.mode === "dialogue"
+                ? "Dual Dialogue"
+                : item.voice === "leo-boy"
+                ? "👦 Leo (Young Boy)"
+                : item.voice === "mia-girl"
+                ? "👧 Mia (Young Girl)"
+                : item.voice === "toby-boy"
+                ? "🧒 Toby (Little Brother)"
+                : item.voice === "lily-girl"
+                ? "👧 Lily (Little Sister)"
+                : item.voice || "Neural Voice"}
+            </span>
+
+            {item.language && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono bg-neutral-900 border border-neutral-700 text-neutral-300">
+                <span>{LANGUAGES.find((l) => l.code === item.language)?.flag || "🌐"}</span>
+                <span>{LANGUAGES.find((l) => l.code === item.language)?.nativeName || item.language.toUpperCase()}</span>
+              </span>
+            )}
+
+            <span className="text-xs text-neutral-400 font-mono">
+              24kHz WAV • {item.modelUsed.replace("gemini-3.8-", "")}
+            </span>
+          </div>
+          <h3 className="text-base font-bold text-neutral-100 truncate mt-1">
+            {item.title}
+          </h3>
+          <p className="text-xs text-neutral-400 line-clamp-1 italic mt-0.5">
+            "{item.textPreview}"
+          </p>
+        </div>
+
+        {/* Action icons */}
+        <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+          <button
+            onClick={handleCopyBase64}
+            title="Copy audio Base64 string"
+            className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition-colors flex items-center gap-1.5 border border-neutral-700/60"
+          >
+            {copied ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-emerald-400">Copied</span>
+              </>
+            ) : (
+              <>
+                <Share2 className="w-3.5 h-3.5 text-neutral-400" />
+                <span>Base64</span>
+              </>
+            )}
+          </button>
+
+          <button
+            onClick={handleDownload}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-md shadow-indigo-600/20 flex items-center gap-1.5 cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Download WAV</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Interactive Waveform Visualizer */}
+      <div className="py-4">
+        <div className="relative group cursor-pointer">
+          <canvas
+            ref={canvasRef}
+            onClick={handleWaveformClick}
+            className="w-full h-20 rounded-xl bg-neutral-950/70 border border-neutral-800/80 transition-all hover:border-neutral-700/80"
+          />
+          <div className="absolute bottom-2 left-3 text-[11px] font-mono text-neutral-400 bg-neutral-900/80 px-2 py-0.5 rounded border border-neutral-800 pointer-events-none">
+            Click anywhere on waveform to scrub
+          </div>
+        </div>
+
+        {/* Timecodes */}
+        <div className="flex justify-between items-center text-xs font-mono text-neutral-400 px-1 mt-1.5">
+          <span className="text-indigo-400 font-semibold">{formatTime(currentTime)}</span>
+          <span>{formatTime(duration || item.duration)}</span>
+        </div>
+      </div>
+
+      {/* Audio Playback Controls */}
+      <div className="flex flex-wrap items-center justify-between gap-4 pt-1">
+        {/* Main Transport */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => seekRelative(-5)}
+            title="Rewind 5 seconds"
+            className="p-2 rounded-lg text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors"
+          >
+            <Rewind className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={togglePlay}
+            className="w-12 h-12 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center shadow-lg shadow-indigo-600/30 transition-all active:scale-95 cursor-pointer"
+            aria-label={isPlaying ? "Pause" : "Play"}
+          >
+            {isPlaying ? (
+              <Pause className="w-6 h-6 fill-current" />
+            ) : (
+              <Play className="w-6 h-6 fill-current ml-0.5" />
+            )}
+          </button>
+
+          <button
+            onClick={() => seekRelative(5)}
+            title="Forward 5 seconds"
+            className="p-2 rounded-lg text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors"
+          >
+            <FastForward className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={() => {
+              if (audioRef.current) {
+                audioRef.current.currentTime = 0;
+                setCurrentTime(0);
+              }
+            }}
+            title="Restart clip"
+            className="p-2 rounded-lg text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors"
+          >
+            <RotateCcw className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Playback rate & Loop */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center bg-neutral-950/80 rounded-lg p-0.5 border border-neutral-800">
+            {[0.75, 1.0, 1.25, 1.5, 2.0].map((rate) => (
+              <button
+                key={rate}
+                onClick={() => setPlaybackRate(rate)}
+                className={`px-2 py-1 text-[11px] font-mono rounded font-medium transition-colors ${
+                  playbackRate === rate
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "text-neutral-400 hover:text-neutral-200"
+                }`}
+              >
+                {rate}x
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={() => setIsLooping(!isLooping)}
+            title="Toggle Loop"
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+              isLooping
+                ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40"
+                : "bg-neutral-800/80 text-neutral-400 border-neutral-700/50 hover:text-neutral-200"
+            }`}
+          >
+            Loop
+          </button>
+        </div>
+
+        {/* Volume */}
+        <div className="flex items-center gap-2 w-32">
+          <button
+            onClick={() => setIsMuted(!isMuted)}
+            className="text-neutral-400 hover:text-neutral-200"
+          >
+            {isMuted || volume === 0 ? (
+              <VolumeX className="w-4 h-4 text-red-400" />
+            ) : (
+              <Volume2 className="w-4 h-4" />
+            )}
+          </button>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={isMuted ? 0 : volume}
+            onChange={(e) => {
+              setVolume(parseFloat(e.target.value));
+              if (isMuted) setIsMuted(false);
+            }}
+            className="w-full h-1.5 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
