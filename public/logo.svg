@@ -1,60 +1,86 @@
-<svg version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="10 10 520 100" width="520" height="100" fill="none">
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 530 95" width="530" height="95" fill="none">
   <defs>
-    <linearGradient id="P" gradientUnits="userSpaceOnUse"/>
-    <linearGradient id="g1" x2="1" href="#P" gradientTransform="matrix(80,-80,80,80,20,100)">
-      <stop stop-color="#4f46e5"/>
-      <stop offset=".5" stop-color="#9333ea"/>
-      <stop offset="1" stop-color="#ec4899"/>
+    <!-- Wave Badge Outer Gradient -->
+    <linearGradient id="badgeBorder" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#4f46e5"/>
+      <stop offset="50%" stop-color="#9333ea"/>
+      <stop offset="100%" stop-color="#ec4899"/>
     </linearGradient>
-    <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+
+    <!-- Studio Text Gradient -->
+    <linearGradient id="studioTextGrad" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" stop-color="#818cf8"/>
       <stop offset="100%" stop-color="#c084fc"/>
     </linearGradient>
-    <filter id="badgeShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#6366f1" flood-opacity="0.25" />
+
+    <!-- S Ribbon Gradient -->
+    <linearGradient id="sRibbonGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#818cf8"/>
+      <stop offset="40%" stop-color="#a855f7"/>
+      <stop offset="100%" stop-color="#ec4899"/>
+    </linearGradient>
+
+    <!-- Subtle Drop Shadow -->
+    <filter id="logoGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#6366f1" flood-opacity="0.3" />
     </filter>
-    <image width="1302" height="520" id="img1" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABRYAAAIICAYAAAAboLK7AAAQAElEQVR4AexdB3wU1faeu9lsNtma3kloodufDdAV2xNDCCjPrqCIAhZQbIAwIr2IjY6A+tr/8Z4QwK64Cvbnq4o+bCBS0tsm2SSbnf/5ZnPDsOymBxK4+8uXc8u55977zezszLd3ZnWSeAkGBAOCAcGAYEAwIBgQDAgGBAOCAcGAYEAwcKozIOYnGBAMCAbanQEhLLY7pSKgYEAwIBgQDAgGBAOCAcGAYKCtDIj2ggHBgGBAMCAYEAwIBjo/A0JY7PzbSIxQMCAYEAwIBjo7A2J8ggHBgGBAMCAYEAwIBgQDggHBgGDgNGRACIun4UY/3acs5i8YEAwIBgQDggHBgGBAMCAYEAwIBgQDggHBwKnPgJhhxzMghMWO51j0IBgQDAgGBAOCAcHASWJAlmRxrnOSuBfdCgYEA4KBFjIg3AUDggHBgGCgCzIgTra74EYTQxYMCAYEA4IBwYBgoHkMkLDobZ6n8GoZA8JbMCAYEAwIBgQDggHBgGBAMCBJQlgUe4FgQDAgGDjVGRDzEwysigz8f8o8E73l9tTNAAAAAElFTkSuQmCC"/>
+
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800;900&amp;display=swap');
+      .title-studio {
+        font-size: 42px;
+        fill: url(#studioTextGrad);
+        font-weight: 900;
+        font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+        letter-spacing: -0.03em;
+      }
+      .subtitle-text {
+        font-size: 13px;
+        fill: #a3a3a3;
+        font-weight: 500;
+        font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      }
+    </style>
   </defs>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800;900&amp;display=swap');
-    tspan { white-space: pre; }
-    .b { fill: url(#g1); }
-    .inner-box { fill: #0a0a0a; }
-    .c { fill: none; stroke: #818cf8; stroke-linecap: round; stroke-linejoin: round; stroke-width: 3; }
-    .title-font {
-      font-size: 44px;
-      fill: url(#textGrad);
-      font-weight: 900;
-      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-      letter-spacing: -0.03em;
-    }
-    .sub-font {
-      font-size: 14px;
-      fill: #a3a3a3;
-      font-weight: 500;
-      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-    }
-  </style>
 
-  <!-- Transparent Background: No solid black path -->
-
-  <!-- Wave Badge Icon -->
-  <g filter="url(#badgeShadow)">
-    <path fill-rule="evenodd" class="b" d="m42 20h36c12.2 0 22 9.8 22 22v36c0 12.2-9.8 22-22 22h-36c-12.2 0-22-9.8-22-22v-36c0-12.2 9.8-22 22-22z"/>
-    <path fill-rule="evenodd" class="inner-box" d="m42 23h36c10.5 0 19 8.5 19 19v36c0 10.5-8.5 19-19 19h-36c-10.5 0-19-8.5-19-19v-36c0-10.5 8.5-19 19-19z"/>
-    <path fill-rule="evenodd" class="c" d="m45 61.5q0.6 0 1.1-0.2 0.6-0.3 1-0.7 0.4-0.4 0.7-1 0.2-0.5 0.2-1.1v-6c0-0.8 0.3-1.6 0.9-2.1 0.5-0.6 1.3-0.9 2.1-0.9 0.8 0 1.6 0.3 2.1 0.9 0.6 0.5 0.9 1.3 0.9 2.1v19.5c0 0.8 0.3 1.6 0.9 2.1 0.5 0.6 1.3 0.9 2.1 0.9 0.8 0 1.6-0.3 2.1-0.9 0.6-0.5 0.9-1.3 0.9-2.1v-24c0-0.8 0.3-1.6 0.9-2.1 0.5-0.6 1.3-0.9 2.1-0.9 0.8 0 1.6 0.3 2.1 0.9 0.6 0.5 0.9 1.3 0.9 2.1v19.5c0 0.8 0.3 1.6 0.9 2.1 0.5 0.6 1.3 0.9 2.1 0.9 0.8 0 1.6-0.3 2.1-0.9 0.6-0.5 0.9-1.3 0.9-2.1v-6q0-0.6 0.2-1.1 0.3-0.6 0.7-1 0.4-0.4 1-0.7 0.5-0.2 1.1-0.2"/>
+  <!-- 1. Wave Badge Icon (Left) -->
+  <g transform="translate(10, 12)" filter="url(#logoGlow)">
+    <!-- Gradient Outline -->
+    <rect x="0" y="0" width="70" height="70" rx="20" fill="url(#badgeBorder)"/>
+    <!-- Dark Inner Box -->
+    <rect x="2.5" y="2.5" width="65" height="65" rx="17.5" fill="#0a0a0a"/>
+    <!-- AudioWaveform Icon (Indigo 400) -->
+    <g transform="translate(17, 17) scale(1.5)" stroke="#818cf8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <path d="M2 13a2 2 0 0 0 2-2V7a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0V4a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0v-4a2 2 0 0 1 2-2" />
+    </g>
   </g>
 
-  <!-- User's Custom AST Logo -->
-  <use href="#img1" transform="matrix(.075,0,0,.075,114.24,25.895)"/>
+  <!-- 2. The Custom AST Logo Mark (Pure Vector) -->
+  <g transform="translate(96, 16) scale(0.11)" filter="url(#logoGlow)">
+    <!-- White / Silver Elements: Letter A, T, and outer S flourishes -->
+    <g fill="#E5E7EB">
+      <!-- Letter 'A' -->
+      <path d="M 282 12 L 16 414 L 118 414 L 174 278 L 348 278 L 378 350 C 362 376 352 396 346 414 L 454 414 L 282 12 Z M 261 74 L 194 212 L 322 212 Z" fill-rule="evenodd"/>
+      <!-- Lower S swirl connected to A -->
+      <path d="M 342 322 C 346 364 382 402 438 412 C 506 424 598 402 662 344 C 670 336 676 324 676 312 C 644 338 584 374 496 374 C 424 374 372 344 354 302 C 348 288 344 266 348 248 C 340 272 338 298 342 322 Z"/>
+      <!-- Upper S swirl connected to T -->
+      <path d="M 524 12 C 478 12 438 34 416 68 C 438 42 476 34 522 34 C 604 34 664 64 682 112 C 688 128 692 148 688 168 C 700 134 698 96 686 72 C 670 36 618 12 524 12 Z"/>
+      <!-- Letter 'T' -->
+      <path d="M 468 12 L 1008 12 L 1008 84 L 828 84 L 828 414 L 732 414 L 732 84 L 542 84 C 518 84 492 80 468 70 L 468 12 Z"/>
+    </g>
 
-  <!-- Typography: Studio with Indigo-to-Purple Gradient -->
-  <text transform="translate(216,62)">
-    <tspan x="0" y="0" class="title-font">Studio</tspan>
-  </text>
+    <!-- Glowing Purple-Pink Ribbon Swirls of 'S' -->
+    <g fill="url(#sRibbonGrad)">
+      <!-- Upper Ribbon of S -->
+      <path d="M 548 28 C 502 28 462 52 434 94 C 402 144 378 202 370 256 C 384 206 414 148 458 104 C 492 68 530 48 572 44 C 594 42 622 44 646 52 C 660 38 634 28 588 28 C 574 28 560 28 548 28 Z"/>
+      <!-- Lower Ribbon of S -->
+      <path d="M 372 198 C 376 150 404 104 446 70 C 434 92 412 128 404 168 C 394 222 420 280 472 322 C 524 366 596 390 672 406 C 688 410 710 412 724 408 C 700 396 672 374 648 348 C 594 290 560 242 518 198 C 468 142 402 164 372 198 Z"/>
+    </g>
+  </g>
 
-  <!-- Subtitle -->
-  <text transform="translate(122,86)">
-    <tspan x="0" y="0" class="sub-font">Neural Text-to-Speech &amp; Voice Production Suite</tspan>
-  </text>
+  <!-- 3. Word "Studio" with Glowing Gradient -->
+  <text x="216" y="52" class="title-studio">Studio</text>
+
+  <!-- 4. Subtitle -->
+  <text x="98" y="76" class="subtitle-text">Neural Text-to-Speech &amp; Voice Production Suite</text>
 </svg>

@@ -35,7 +35,7 @@ export const Header: React.FC<HeaderProps> = ({
   hasCustomApiKey,
 }) => {
   // Support custom logo (SVG first, then PNG, with fallback)
-  const [logoSrc, setLogoSrc] = useState<string>("/logo.svg");
+  const [logoSrc, setLogoSrc] = useState<string>("./logo.svg");
   const [hasLogo, setHasLogo] = useState<boolean>(true);
 
   return (
@@ -50,8 +50,8 @@ export const Header: React.FC<HeaderProps> = ({
                 alt="AST Studio"
                 className="h-9 sm:h-10 w-auto object-contain cursor-pointer drop-shadow-[0_2px_10px_rgba(99,102,241,0.2)]"
                 onError={() => {
-                  if (logoSrc === "/logo.svg") {
-                    setLogoSrc("/logo.png");
+                  if (logoSrc === "./logo.svg") {
+                    setLogoSrc("./logo.png");
                   } else {
                     setHasLogo(false);
                   }
