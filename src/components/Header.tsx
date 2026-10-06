@@ -86,15 +86,16 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Brand: The whole left side of header */}
         <div className="flex items-center gap-3">
           {fullBannerSrc ? (
-            <div className="flex items-center gap-2.5">
+            <div className="relative inline-flex items-center select-none">
               <img
                 src={fullBannerSrc}
                 alt="AST Studio"
-                className="h-10 sm:h-12 w-auto object-contain cursor-pointer transition-transform hover:scale-[1.02] drop-shadow-[0_2px_12px_rgba(99,102,241,0.25)]"
+                className="h-10 sm:h-12 w-auto object-contain cursor-pointer transition-transform hover:scale-[1.01] drop-shadow-[0_2px_12px_rgba(99,102,241,0.25)]"
                 onClick={() => fileInputRef.current?.click()}
                 title="AST Studio (Click to update banner image)"
               />
-              <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+              {/* Gemini 3.8 TTS Badge floating directly over the designated space on the banner */}
+              <span className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/35 backdrop-blur-sm shadow-sm absolute left-[58%] sm:left-[59%] top-[18%] sm:top-[20%] pointer-events-none">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 Gemini 3.8 TTS
               </span>
