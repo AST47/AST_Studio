@@ -35,22 +35,37 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenApiKeyModal,
   hasCustomApiKey,
 }) => {
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [fullBannerSrc, setFullBannerSrc] = useState<string | null>(() => {
     try {
       return (
         localStorage.getItem("ast_studio_custom_banner") ||
         localStorage.getItem("ast_studio_custom_ast_logo") ||
-        null
+        "./logo.png"
       );
     } catch {
-      return null;
+      return "./logo.png";
     }
   });
 
   // Check if an image was placed in public/ (logo.png or ast-studio-banner-template.png)
   useEffect(() => {
-    if (!fullBannerSrc) {
+    // If we have a dataUrl saved in localStorage, persist it to public/logo.png for all users
+    try {
+      const savedDataUrl = localStorage.getItem("ast_studio_custom_banner");
+      if (savedDataUrl && savedDataUrl.startsWith("data:image/")) {
+        fetch("/api/save-logo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dataUrl: savedDataUrl }),
+        }).catch(() => {
+          // Silent catch in static environments
+        });
+      }
+    } catch {
+      // Ignore localStorage errors
+    }
+
+    if (!fullBannerSrc || fullBannerSrc === "./logo.png") {
       const probe1 = new Image();
       probe1.src = "./logo.png";
       probe1.onload = () => setFullBannerSrc("./logo.png");
@@ -62,57 +77,26 @@ export const Header: React.FC<HeaderProps> = ({
     }
   }, [fullBannerSrc]);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      if (dataUrl) {
-        setFullBannerSrc(dataUrl);
-        try {
-          localStorage.setItem("ast_studio_custom_banner", dataUrl);
-        } catch (err) {
-          console.warn("Could not save to localStorage", err);
-        }
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
   return (
     <header className="border-b border-neutral-800/80 bg-neutral-950/80 backdrop-blur-md sticky top-0 z-30">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        {/* Brand: The whole left side of header */}
+        {/* Brand: Official AST Studio Header Banner */}
         <div className="flex items-center gap-3">
           {fullBannerSrc ? (
             <div className="relative inline-flex items-center select-none">
               <img
                 src={fullBannerSrc}
                 alt="AST Studio"
-                className="h-14 sm:h-16 md:h-20 w-auto object-contain cursor-pointer transition-transform hover:scale-[1.01] drop-shadow-[0_4px_16px_rgba(99,102,241,0.28)]"
-                onClick={() => fileInputRef.current?.click()}
-                title="AST Studio (Click to update banner image)"
+                className="h-14 sm:h-16 md:h-20 w-auto object-contain drop-shadow-[0_4px_16px_rgba(99,102,241,0.28)] pointer-events-none"
               />
               {/* Gemini 3.8 TTS Badge floating directly over the designated space on the banner */}
               <span className="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] md:text-[11px] font-mono font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/35 backdrop-blur-sm shadow-sm absolute left-[63%] sm:left-[64%] md:left-[65%] top-[18%] sm:top-[20%] pointer-events-none">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 Gemini 3.8 TTS
               </span>
-              <input
-                type="file"
-                ref={fileInputRef}
-                accept="image/*"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
             </div>
           ) : (
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-3 cursor-pointer group"
-              title="Click anywhere here to upload your AST Studio header image"
-            >
+            <div className="flex items-center gap-3">
               {/* Wave Badge */}
               <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 p-0.5 shadow-lg shadow-indigo-600/25 flex items-center justify-center shrink-0">
                 <div className="w-full h-full bg-neutral-950 rounded-[10px] flex items-center justify-center">
@@ -125,10 +109,6 @@ export const Header: React.FC<HeaderProps> = ({
                   <h1 className="text-base sm:text-lg font-black tracking-tight text-white flex items-center gap-1.5">
                     AST <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Studio</span>
                   </h1>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 flex items-center gap-1 group-hover:bg-indigo-500/20 transition-colors">
-                    <Upload className="w-3 h-3" />
-                    <span>Upload Image</span>
-                  </span>
                   <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                     Gemini 3.8 TTS
@@ -138,15 +118,6 @@ export const Header: React.FC<HeaderProps> = ({
                   Neural Text-to-Speech & Voice Production Suite
                 </p>
               </div>
-
-              {/* Hidden File Input */}
-              <input
-                type="file"
-                ref={fileInputRef}
-                accept="image/*"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
             </div>
           )}
         </div>

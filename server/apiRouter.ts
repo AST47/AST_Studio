@@ -1,4 +1,7 @@
 import { Router } from "express";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import {
   generateSpeech,
   enhanceScript,
@@ -6,7 +9,29 @@ import {
   GenerateTtsParams,
 } from "./ttsService.ts";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 export const apiRouter = Router();
+
+// Save uploaded logo directly to public/logo.png
+apiRouter.post("/save-logo", (req, res) => {
+  try {
+    const { dataUrl } = req.body;
+    if (!dataUrl || typeof dataUrl !== "string") {
+      return res.status(400).json({ error: "Missing dataUrl" });
+    }
+    const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, "");
+    const buffer = Buffer.from(base64Data, "base64");
+    const targetPath = path.resolve(__dirname, "../public/logo.png");
+    fs.writeFileSync(targetPath, buffer);
+    console.log("Successfully saved official logo to public/logo.png, size:", buffer.length);
+    res.json({ success: true, size: buffer.length });
+  } catch (err: any) {
+    console.error("Failed to save logo to disk:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Health check
 apiRouter.get("/health", (req, res) => {
