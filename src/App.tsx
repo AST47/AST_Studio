@@ -185,14 +185,6 @@ export default function App() {
           />
         </section>
 
-        {/* Persistent Audio Deck (always readily available when user has generated or selected a track) */}
-        <section aria-label="Audio Playback Deck">
-          <AudioPlayer
-            item={activeAudioItem}
-            onClear={() => setActiveAudioItem(null)}
-          />
-        </section>
-
         {/* Tab Content Panels */}
         <section className="transition-opacity duration-200">
           {currentTab === "solo" && (
@@ -202,6 +194,8 @@ export default function App() {
               onAudioGenerated={handleAudioGenerated}
               quotaStatus={quotaStatus}
               onQuotaUpdated={setQuotaStatus}
+              activeAudioItem={activeAudioItem}
+              onClearAudio={() => setActiveAudioItem(null)}
             />
           )}
 
@@ -210,25 +204,43 @@ export default function App() {
               onAudioGenerated={handleAudioGenerated}
               quotaStatus={quotaStatus}
               onQuotaUpdated={setQuotaStatus}
+              activeAudioItem={activeAudioItem}
+              onClearAudio={() => setActiveAudioItem(null)}
             />
           )}
 
           {currentTab === "catalog" && (
-            <VoiceCatalog
-              selectedVoice={selectedVoice}
-              onSelectVoice={handleSelectFromCatalog}
-              onPlayAudition={handleAuditionPlayed}
-            />
+            <div className="space-y-6">
+              <VoiceCatalog
+                selectedVoice={selectedVoice}
+                onSelectVoice={handleSelectFromCatalog}
+                onPlayAudition={handleAuditionPlayed}
+              />
+              {activeAudioItem && (
+                <AudioPlayer
+                  item={activeAudioItem}
+                  onClear={() => setActiveAudioItem(null)}
+                />
+              )}
+            </div>
           )}
 
           {currentTab === "history" && (
-            <HistoryDrawer
-              items={historyItems}
-              activeItemId={activeAudioItem?.id || null}
-              onSelectItem={(item) => setActiveAudioItem(item)}
-              onDeleteItem={handleDeleteItem}
-              onClearAll={handleClearAllHistory}
-            />
+            <div className="space-y-6">
+              <HistoryDrawer
+                items={historyItems}
+                activeItemId={activeAudioItem?.id || null}
+                onSelectItem={(item) => setActiveAudioItem(item)}
+                onDeleteItem={handleDeleteItem}
+                onClearAll={handleClearAllHistory}
+              />
+              {activeAudioItem && (
+                <AudioPlayer
+                  item={activeAudioItem}
+                  onClear={() => setActiveAudioItem(null)}
+                />
+              )}
+            </div>
           )}
         </section>
 

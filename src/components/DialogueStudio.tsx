@@ -18,17 +18,22 @@ import { VoiceName, DialogueTurn, GeneratedAudioItem, QuotaStatus, SupportedLang
 import { VOICES_CATALOG, DIALOGUE_TEMPLATES } from "../data/voices";
 import { LANGUAGES, detectLanguageFromText } from "../data/languages";
 import { requestTts, requestScriptEnhance } from "../services/api";
+import { AudioPlayer } from "./AudioPlayer";
 
 interface DialogueStudioProps {
   onAudioGenerated: (item: GeneratedAudioItem) => void;
   quotaStatus?: QuotaStatus;
   onQuotaUpdated?: (quota: QuotaStatus) => void;
+  activeAudioItem?: GeneratedAudioItem | null;
+  onClearAudio?: () => void;
 }
 
 export const DialogueStudio: React.FC<DialogueStudioProps> = ({
   onAudioGenerated,
   quotaStatus,
   onQuotaUpdated,
+  activeAudioItem,
+  onClearAudio,
 }) => {
   const [speaker1, setSpeaker1] = useState<{
     name: string;
@@ -768,6 +773,14 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({
           </div>
         </div>
       )}
+
+      {/* Outcome Player Deck */}
+      <section aria-label="Listen to the Outcome">
+        <AudioPlayer
+          item={activeAudioItem || null}
+          onClear={onClearAudio}
+        />
+      </section>
     </div>
   );
 };

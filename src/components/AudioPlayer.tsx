@@ -21,7 +21,7 @@ interface AudioPlayerProps {
   onClear?: () => void;
 }
 
-export const AudioPlayer: React.FC<AudioPlayerProps> = ({ item }) => {
+export const AudioPlayer: React.FC<AudioPlayerProps> = ({ item, onClear }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isInitialMountRef = useRef<boolean>(true);
@@ -216,14 +216,22 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({ item }) => {
 
   if (!item) {
     return (
-      <div className="bg-neutral-900/60 border border-neutral-800/80 rounded-2xl p-6 text-center backdrop-blur-sm">
-        <div className="w-12 h-12 rounded-full bg-neutral-800/70 border border-neutral-700/50 flex items-center justify-center mx-auto mb-3 text-neutral-400">
-          <Music2 className="w-6 h-6 text-indigo-400/80" />
+      <div className="bg-neutral-900/80 border border-neutral-800 rounded-2xl p-5 sm:p-6 backdrop-blur-sm">
+        <div className="flex items-center gap-2 mb-4 border-b border-neutral-800/80 pb-3">
+          <Play className="w-4 h-4 text-indigo-400" />
+          <h3 className="text-sm font-bold text-neutral-200 uppercase tracking-wider">
+            3. Listen to the Outcome
+          </h3>
         </div>
-        <h4 className="text-sm font-semibold text-neutral-200">Studio Audio Deck Idle</h4>
-        <p className="text-xs text-neutral-400 mt-1 max-w-sm mx-auto">
-          Write or select a script above and click <span className="text-indigo-400 font-medium">Generate Speech</span> to render neural audio.
-        </p>
+        <div className="text-center py-6">
+          <div className="w-12 h-12 rounded-full bg-neutral-800/70 border border-neutral-700/50 flex items-center justify-center mx-auto mb-3 text-neutral-400">
+            <Music2 className="w-6 h-6 text-indigo-400/80" />
+          </div>
+          <h4 className="text-sm font-semibold text-neutral-200">Outcome Player Ready</h4>
+          <p className="text-xs text-neutral-400 mt-1 max-w-sm mx-auto">
+            Write or customize your script in <span className="text-indigo-400 font-medium">Step 2</span> and click <span className="text-indigo-400 font-medium">Generate Speech</span> to listen to your voice here.
+          </p>
+        </div>
       </div>
     );
   }
@@ -234,6 +242,28 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({ item }) => {
       {isPlaying && (
         <div className="absolute -top-16 -right-16 w-56 h-56 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none animate-pulse" />
       )}
+
+      {/* Step 3 Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 pb-3 border-b border-neutral-800/80">
+        <div>
+          <h3 className="text-sm font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-2">
+            <Play className="w-4 h-4 text-indigo-400" />
+            3. Listen to the Outcome
+          </h3>
+          <p className="text-xs text-neutral-400 mt-0.5">
+            Play back, inspect the neural waveform, adjust speed, and export 24kHz WAV audio.
+          </p>
+        </div>
+        {onClear && (
+          <button
+            onClick={onClear}
+            className="text-xs text-neutral-400 hover:text-neutral-200 flex items-center gap-1 cursor-pointer transition-colors self-start sm:self-auto"
+            title="Clear Audio Deck"
+          >
+            <span>Clear Audio</span>
+          </button>
+        )}
+      </div>
 
       {/* Hidden audio element */}
       <audio

@@ -20,6 +20,7 @@ import { VoiceName, GeneratedAudioItem, QuotaStatus, SupportedLanguage } from ".
 import { VOICES_CATALOG, PRESET_STYLES, SCRIPT_TEMPLATES } from "../data/voices";
 import { LANGUAGES, detectLanguageFromText } from "../data/languages";
 import { requestTts, requestScriptEnhance } from "../services/api";
+import { AudioPlayer } from "./AudioPlayer";
 
 interface SoloStudioProps {
   selectedVoice: VoiceName;
@@ -27,6 +28,8 @@ interface SoloStudioProps {
   onAudioGenerated: (item: GeneratedAudioItem) => void;
   quotaStatus?: QuotaStatus;
   onQuotaUpdated?: (quota: QuotaStatus) => void;
+  activeAudioItem?: GeneratedAudioItem | null;
+  onClearAudio?: () => void;
 }
 
 export const SoloStudio: React.FC<SoloStudioProps> = ({
@@ -35,6 +38,8 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
   onAudioGenerated,
   quotaStatus,
   onQuotaUpdated,
+  activeAudioItem,
+  onClearAudio,
 }) => {
   const [scriptText, setScriptText] = useState(
     SCRIPT_TEMPLATES[0].text
@@ -332,7 +337,7 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
           <div className="flex items-center justify-between mb-2">
             <label className="text-xs font-bold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
               <Sliders className="w-3.5 h-3.5 text-indigo-400" />
-              Voice Style & Direction
+              2. Voice Style & Direction
             </label>
 
             <div className="relative">
@@ -690,6 +695,14 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
           </button>
         </div>
       </div>
+
+      {/* 3. Listen to the Outcome (Audio Deck) */}
+      <section aria-label="Listen to the Outcome">
+        <AudioPlayer
+          item={activeAudioItem || null}
+          onClear={onClearAudio}
+        />
+      </section>
     </div>
   );
 };
