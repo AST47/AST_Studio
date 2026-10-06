@@ -36,22 +36,31 @@ export const Header: React.FC<HeaderProps> = ({
   hasCustomApiKey,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [customAstLogo, setCustomAstLogo] = useState<string | null>(() => {
+  const [fullBannerSrc, setFullBannerSrc] = useState<string | null>(() => {
     try {
-      return localStorage.getItem("ast_studio_custom_ast_logo") || null;
+      return (
+        localStorage.getItem("ast_studio_custom_banner") ||
+        localStorage.getItem("ast_studio_custom_ast_logo") ||
+        null
+      );
     } catch {
       return null;
     }
   });
 
-  // Check if an image was pushed to public/ast-logo.png or public/logo.png
+  // Check if an image was placed in public/ (logo.png or ast-studio-banner-template.png)
   useEffect(() => {
-    if (!customAstLogo) {
-      const img = new Image();
-      img.src = "./ast-logo.png";
-      img.onload = () => setCustomAstLogo("./ast-logo.png");
+    if (!fullBannerSrc) {
+      const probe1 = new Image();
+      probe1.src = "./logo.png";
+      probe1.onload = () => setFullBannerSrc("./logo.png");
+      probe1.onerror = () => {
+        const probe2 = new Image();
+        probe2.src = "./ast-studio-banner-template.png";
+        probe2.onload = () => setFullBannerSrc("./ast-studio-banner-template.png");
+      };
     }
-  }, [customAstLogo]);
+  }, [fullBannerSrc]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -60,9 +69,9 @@ export const Header: React.FC<HeaderProps> = ({
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
       if (dataUrl) {
-        setCustomAstLogo(dataUrl);
+        setFullBannerSrc(dataUrl);
         try {
-          localStorage.setItem("ast_studio_custom_ast_logo", dataUrl);
+          localStorage.setItem("ast_studio_custom_banner", dataUrl);
         } catch (err) {
           console.warn("Could not save to localStorage", err);
         }
@@ -74,61 +83,71 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="border-b border-neutral-800/80 bg-neutral-950/80 backdrop-blur-md sticky top-0 z-30">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        {/* Brand */}
+        {/* Brand: The whole left side of header */}
         <div className="flex items-center gap-3">
-          {/* Wave Badge */}
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 p-0.5 shadow-lg shadow-indigo-600/25 flex items-center justify-center shrink-0">
-            <div className="w-full h-full bg-neutral-950 rounded-[10px] flex items-center justify-center">
-              <AudioWaveform className="w-5 h-5 text-indigo-400" />
-            </div>
-          </div>
-
-          <div className="flex flex-col">
+          {fullBannerSrc ? (
             <div className="flex items-center gap-2.5">
-              {/* Empty Space / Custom Image Slot for AST Logo */}
-              <div
+              <img
+                src={fullBannerSrc}
+                alt="AST Studio"
+                className="h-10 sm:h-12 w-auto object-contain cursor-pointer transition-transform hover:scale-[1.02] drop-shadow-[0_2px_12px_rgba(99,102,241,0.25)]"
                 onClick={() => fileInputRef.current?.click()}
-                title="Click to upload your AST logo image"
-                className="group relative cursor-pointer flex items-center justify-center min-w-[70px] h-8 rounded-lg border border-dashed border-neutral-700 hover:border-indigo-400 hover:bg-neutral-900/60 transition-all px-2 select-none"
-              >
-                {customAstLogo ? (
-                  <img
-                    src={customAstLogo}
-                    alt="AST Logo"
-                    className="h-7 w-auto object-contain"
-                  />
-                ) : (
-                  <div className="flex items-center gap-1.5 text-neutral-400 group-hover:text-indigo-300 transition-colors">
-                    <Upload className="w-3.5 h-3.5" />
-                    <span className="text-[11px] font-mono font-medium">Upload AST</span>
-                  </div>
-                )}
-                {/* Hidden File Input */}
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-              </div>
-
-              {/* Studio Title */}
-              <span className="text-base sm:text-lg font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400">
-                Studio
-              </span>
-
-              {/* Gemini 3.8 TTS Status Badge */}
+                title="AST Studio (Click to update banner image)"
+              />
               <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 Gemini 3.8 TTS
               </span>
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
             </div>
+          ) : (
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-3 cursor-pointer group"
+              title="Click anywhere here to upload your AST Studio header image"
+            >
+              {/* Wave Badge */}
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 p-0.5 shadow-lg shadow-indigo-600/25 flex items-center justify-center shrink-0">
+                <div className="w-full h-full bg-neutral-950 rounded-[10px] flex items-center justify-center">
+                  <AudioWaveform className="w-5 h-5 text-indigo-400" />
+                </div>
+              </div>
 
-            <p className="text-[11px] text-neutral-400 hidden sm:block mt-0.5">
-              Neural Text-to-Speech & Voice Production Suite
-            </p>
-          </div>
+              <div className="flex flex-col">
+                <div className="flex items-center gap-2">
+                  <h1 className="text-base sm:text-lg font-black tracking-tight text-white flex items-center gap-1.5">
+                    AST <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Studio</span>
+                  </h1>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 flex items-center gap-1 group-hover:bg-indigo-500/20 transition-colors">
+                    <Upload className="w-3 h-3" />
+                    <span>Upload Image</span>
+                  </span>
+                  <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Gemini 3.8 TTS
+                  </span>
+                </div>
+                <p className="text-[11px] text-neutral-400 hidden sm:block mt-0.5">
+                  Neural Text-to-Speech & Voice Production Suite
+                </p>
+              </div>
+
+              {/* Hidden File Input */}
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+            </div>
+          )}
         </div>
 
         {/* Right side: API Key button, Quota HUD Pill & Studio Navigation Tabs */}
