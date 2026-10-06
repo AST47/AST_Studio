@@ -95,7 +95,7 @@ export const Header: React.FC<HeaderProps> = ({
                 title="AST Studio (Click to update banner image)"
               />
               {/* Gemini 3.8 TTS Badge floating directly over the designated space on the banner */}
-              <span className="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] md:text-[11px] font-mono font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/35 backdrop-blur-sm shadow-sm absolute left-[58%] sm:left-[59%] top-[18%] sm:top-[20%] pointer-events-none">
+              <span className="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] md:text-[11px] font-mono font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/35 backdrop-blur-sm shadow-sm absolute left-[63%] sm:left-[64%] md:left-[65%] top-[18%] sm:top-[20%] pointer-events-none">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 Gemini 3.8 TTS
               </span>
