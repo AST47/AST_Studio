@@ -128,15 +128,21 @@ export const Header: React.FC<HeaderProps> = ({
           {onOpenApiKeyModal && (
             <button
               onClick={onOpenApiKeyModal}
-              title="Configure Google Gemini API Key (Required for static GitHub Pages)"
-              className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-neutral-900/90 hover:bg-neutral-800 text-neutral-300 border border-neutral-800 flex items-center gap-1.5 transition-colors cursor-pointer"
+              title={hasCustomApiKey ? "Google Gemini API Key Connected" : "Get Free Google Gemini API Key"}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                hasCustomApiKey
+                  ? "bg-neutral-900/90 hover:bg-neutral-800 text-neutral-300 border border-neutral-800"
+                  : "bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 shadow-sm shadow-indigo-500/20 ring-1 ring-indigo-500/30"
+              }`}
             >
               <Key className="w-3.5 h-3.5 text-indigo-400" />
-              <span className="hidden sm:inline">API Key</span>
+              <span className="hidden sm:inline">
+                {hasCustomApiKey ? "API Key Connected" : "Get Free API Key"}
+              </span>
               {hasCustomApiKey ? (
                 <span className="w-2 h-2 rounded-full bg-emerald-400" title="API Key Connected" />
               ) : (
-                <span className="w-2 h-2 rounded-full bg-amber-400" title="Server Key Active" />
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" title="Click to connect free Gemini API Key" />
               )}
             </button>
           )}

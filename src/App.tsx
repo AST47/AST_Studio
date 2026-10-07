@@ -25,6 +25,7 @@ import {
   AlertTriangle,
   Flame,
   Key,
+  ExternalLink,
 } from "lucide-react";
 
 const STORAGE_KEY = "voxstudio_audio_history_v1";
@@ -154,25 +155,47 @@ export default function App() {
 
       {/* Main Studio Body */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {/* Banner if API key not found and no client key */}
+        {/* Visitor Guide Banner if no client key is stored */}
         {!hasApiKey && !storedClientKey && serverStatus !== "checking" && (
-          <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-800/80 text-amber-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-              <div>
-                <strong className="font-semibold block text-sm text-amber-100 mb-0.5">
-                  Gemini API Key Required (Static GitHub Pages)
-                </strong>
-                Speech synthesis uses Gemini 3.8 TTS. Connect your free Google Gemini API key to generate audio.
+          <div className="p-5 rounded-2xl bg-gradient-to-r from-indigo-950/60 via-neutral-900 to-purple-950/50 border border-indigo-500/40 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0 mt-0.5">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h4 className="text-sm font-bold text-white">
+                    Get Your Free Google Gemini API Key
+                  </h4>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                    Free Tier • 15 requests/min • No Credit Card
+                  </span>
+                </div>
+                <p className="text-xs text-neutral-300 leading-relaxed max-w-2xl">
+                  AST Studio uses Google Gemini 3.8 to generate expressive voices. Google provides a generous free tier for all Google account holders. Get your free key in 30 seconds to start creating audio.
+                </p>
               </div>
             </div>
-            <button
-              onClick={() => setIsApiKeyModalOpen(true)}
-              className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-semibold text-xs transition-colors shrink-0 flex items-center gap-1.5 cursor-pointer shadow-md"
-            >
-              <Key className="w-3.5 h-3.5" />
-              <span>Connect API Key</span>
-            </button>
+
+            <div className="flex items-center gap-2.5 shrink-0 self-start md:self-center">
+              <a
+                href="https://aistudio.google.com/apikey"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3.5 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-semibold text-xs transition-colors flex items-center gap-1.5 border border-neutral-700"
+              >
+                <span>Google AI Studio</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+
+              <button
+                onClick={() => setIsApiKeyModalOpen(true)}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-xs transition-all shadow-md shadow-indigo-600/30 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Key className="w-3.5 h-3.5" />
+                <span>Connect Free Key</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -196,6 +219,7 @@ export default function App() {
               onQuotaUpdated={setQuotaStatus}
               activeAudioItem={activeAudioItem}
               onClearAudio={() => setActiveAudioItem(null)}
+              onOpenApiKeyModal={() => setIsApiKeyModalOpen(true)}
             />
           )}
 
@@ -206,6 +230,7 @@ export default function App() {
               onQuotaUpdated={setQuotaStatus}
               activeAudioItem={activeAudioItem}
               onClearAudio={() => setActiveAudioItem(null)}
+              onOpenApiKeyModal={() => setIsApiKeyModalOpen(true)}
             />
           )}
 

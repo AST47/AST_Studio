@@ -13,6 +13,7 @@ import {
   ChevronDown,
   Globe,
   SpellCheck,
+  Key,
 } from "lucide-react";
 import { VoiceName, DialogueTurn, GeneratedAudioItem, QuotaStatus, SupportedLanguage } from "../types/tts";
 import { VOICES_CATALOG, DIALOGUE_TEMPLATES } from "../data/voices";
@@ -26,6 +27,7 @@ interface DialogueStudioProps {
   onQuotaUpdated?: (quota: QuotaStatus) => void;
   activeAudioItem?: GeneratedAudioItem | null;
   onClearAudio?: () => void;
+  onOpenApiKeyModal?: () => void;
 }
 
 export const DialogueStudio: React.FC<DialogueStudioProps> = ({
@@ -34,6 +36,7 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({
   onQuotaUpdated,
   activeAudioItem,
   onClearAudio,
+  onOpenApiKeyModal,
 }) => {
   const [speaker1, setSpeaker1] = useState<{
     name: string;
@@ -66,6 +69,7 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({
   const [errorState, setErrorState] = useState<{
     message: string;
     isQuota: boolean;
+    isApiKeyRequired?: boolean;
     details?: string;
   } | null>(null);
   const [retryCountdown, setRetryCountdown] = useState<number>(0);
@@ -265,9 +269,16 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({
     } catch (err: any) {
       console.error("Dialogue speech error", err);
       const isQuota = err.isQuotaExceeded || err.message?.includes("Quota");
+      const isApiKeyRequired =
+        err.message === "API_KEY_REQUIRED" ||
+        err.message?.includes("API_KEY") ||
+        err.message?.includes("API key");
       setErrorState({
-        message: err.message || "Failed to render dialogue audio.",
+        message: isApiKeyRequired
+          ? "Google Gemini API Key Required"
+          : err.message || "Failed to render dialogue audio.",
         isQuota,
+        isApiKeyRequired,
         details: err.details,
       });
       if (isQuota) {
@@ -658,6 +669,41 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({
                 <span className="text-[11px] text-amber-300/70">
                   Tip: Free tier per-minute quotas reset every 30–60s. For heavy usage, attach a pay-as-you-go key in Settings &gt; Secrets.
                 </span>
+              </div>
+            </div>
+          ) : errorState.isApiKeyRequired ? (
+            <div className="p-4 bg-gradient-to-r from-purple-950/60 to-indigo-950/50 border border-indigo-500/40 rounded-xl space-y-2.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-white text-sm flex items-center gap-2">
+                  <Key className="w-4 h-4 text-indigo-400" />
+                  Free Google Gemini API Key Needed
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                  100% Free • No Credit Card
+                </span>
+              </div>
+              <p className="text-neutral-300 leading-relaxed">
+                AST Studio runs as a static web app on GitHub Pages. Connect your free Gemini API key from Google AI Studio to render multi-speaker dialogue with Gemini 3.8.
+              </p>
+              <div className="flex flex-wrap items-center gap-2.5 pt-1 border-t border-indigo-800/40">
+                <a
+                  href="https://aistudio.google.com/apikey"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white font-semibold text-xs flex items-center gap-1.5 transition-colors border border-neutral-700"
+                >
+                  <span>1. Get Free Key from Google AI Studio ↗</span>
+                </a>
+                {onOpenApiKeyModal && (
+                  <button
+                    type="button"
+                    onClick={onOpenApiKeyModal}
+                    className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-md shadow-indigo-600/30"
+                  >
+                    <Key className="w-3.5 h-3.5" />
+                    <span>2. Connect Key Here</span>
+                  </button>
+                )}
               </div>
             </div>
           ) : (

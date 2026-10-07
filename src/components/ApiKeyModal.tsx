@@ -10,6 +10,11 @@ import {
   Sparkles,
   Loader2,
   AlertCircle,
+  Eye,
+  EyeOff,
+  Clipboard,
+  HelpCircle,
+  Zap,
 } from "lucide-react";
 import { GoogleGenAI } from "@google/genai";
 import {
@@ -32,6 +37,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
   const [keyInput, setKeyInput] = useState("");
   const [savedKey, setSavedKey] = useState("");
   const [isTesting, setIsTesting] = useState(false);
+  const [showKey, setShowKey] = useState(false);
   const [testResult, setTestResult] = useState<{
     success: boolean;
     message: string;
@@ -81,6 +87,17 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
     if (onKeyChanged) onKeyChanged();
   };
 
+  const handlePasteFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        setKeyInput(text.trim());
+      }
+    } catch {
+      // Clipboard permission denied or unsupported
+    }
+  };
+
   const handleTestKey = async () => {
     const keyToTest = keyInput.trim() || savedKey;
     if (!keyToTest) {
@@ -124,19 +141,22 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="p-5 border-b border-neutral-800 flex items-center justify-between">
+        <div className="p-5 border-b border-neutral-800 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
-              <Key className="w-4 h-4" />
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+              <Key className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-neutral-100">
-                Gemini API Key Settings
+              <h3 className="text-base font-bold text-neutral-100 flex items-center gap-2">
+                <span>Google Gemini API Key</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                  100% Free
+                </span>
               </h3>
-              <p className="text-xs text-neutral-400">
-                Required for static GitHub Pages hosting
+              <p className="text-xs text-neutral-400 mt-0.5">
+                Connect your key to generate realistic neural speech
               </p>
             </div>
           </div>
@@ -145,32 +165,108 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
             onClick={onClose}
             className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors cursor-pointer"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-5 space-y-4">
-          <div className="text-xs text-neutral-300 leading-relaxed bg-neutral-950/80 p-3.5 rounded-xl border border-neutral-800/80">
-            <div className="flex items-center gap-1.5 text-indigo-400 font-semibold mb-1">
-              <Lock className="w-3.5 h-3.5" />
-              <span>100% Client-Side Private Storage</span>
+        {/* Scrollable Content */}
+        <div className="p-5 space-y-4 overflow-y-auto">
+          {/* Step-by-Step Visitor Guide Card */}
+          <div className="bg-gradient-to-br from-indigo-950/40 via-neutral-900 to-purple-950/30 border border-indigo-500/30 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
+                <HelpCircle className="w-4 h-4 text-indigo-400" />
+                How to get your free key (30 seconds)
+              </span>
+              <span className="text-[10px] font-medium text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/30">
+                No Credit Card Needed
+              </span>
             </div>
-            When running on GitHub Pages, your key is stored strictly inside your own browser's <code className="text-indigo-300">localStorage</code>. It is never sent to any intermediary server.
+
+            <ol className="text-xs text-neutral-300 space-y-2.5 pl-1">
+              <li className="flex items-start gap-2.5">
+                <span className="w-5 h-5 rounded-full bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+                  1
+                </span>
+                <div>
+                  Click the button below to open{" "}
+                  <strong className="text-white">Google AI Studio</strong> in a new tab.
+                </div>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <span className="w-5 h-5 rounded-full bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+                  2
+                </span>
+                <div>
+                  Sign in with any Google account and click the blue{" "}
+                  <strong className="text-indigo-300">"+ Create API key"</strong> button.
+                </div>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <span className="w-5 h-5 rounded-full bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+                  3
+                </span>
+                <div>
+                  <strong className="text-white">Copy the key</strong>, come back here, and paste it into the field below.
+                </div>
+              </li>
+            </ol>
+
+            {/* Direct Link to Google AI Studio */}
+            <div className="pt-1">
+              <a
+                href="https://aistudio.google.com/apikey"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/25 transition-all cursor-pointer"
+              >
+                <span>Open Google AI Studio to Create Key</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
           </div>
 
+          {/* Privacy Note */}
+          <div className="text-xs text-neutral-400 bg-neutral-950/80 p-3 rounded-xl border border-neutral-800/80 flex items-start gap-2">
+            <Lock className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+            <div>
+              <strong className="text-neutral-200 block mb-0.5">100% Client-Side Private Storage</strong>
+              Your API key is saved solely inside your device's browser (<code className="text-indigo-300">localStorage</code>). It is never logged or shared with anyone.
+            </div>
+          </div>
+
+          {/* Input Field */}
           <div>
-            <label className="text-xs font-semibold text-neutral-300 block mb-1.5">
-              Google Gemini API Key
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold text-neutral-300">
+                Your Gemini API Key
+              </label>
+              <button
+                type="button"
+                onClick={handlePasteFromClipboard}
+                className="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium transition-colors cursor-pointer"
+                title="Paste from clipboard"
+              >
+                <Clipboard className="w-3 h-3" />
+                <span>Paste Key</span>
+              </button>
+            </div>
             <div className="relative">
               <input
-                type="password"
+                type={showKey ? "text" : "password"}
                 value={keyInput}
                 onChange={(e) => setKeyInput(e.target.value)}
                 placeholder="AIzaSy..."
-                className="w-full px-3.5 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-xs font-mono text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-indigo-500/80 transition-colors"
+                className="w-full pl-3.5 pr-10 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-xs font-mono text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-indigo-500/80 transition-colors"
               />
+              <button
+                type="button"
+                onClick={() => setShowKey(!showKey)}
+                className="absolute right-2.5 top-2.5 text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer"
+                title={showKey ? "Hide key" : "Show key"}
+              >
+                {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
           </div>
 
@@ -191,23 +287,10 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
               <span className="line-clamp-2">{testResult.message}</span>
             </div>
           )}
-
-          {/* Get a Free Key link */}
-          <div className="pt-1">
-            <a
-              href="https://aistudio.google.com/apikey"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium transition-colors"
-            >
-              <span>Get a free Gemini API key from Google AI Studio</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
-          </div>
         </div>
 
         {/* Footer actions */}
-        <div className="p-4 bg-neutral-950/80 border-t border-neutral-800 flex items-center justify-between gap-2">
+        <div className="p-4 bg-neutral-950/80 border-t border-neutral-800 flex items-center justify-between gap-2 shrink-0">
           {savedKey ? (
             <button
               onClick={handleClear}
@@ -224,12 +307,12 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
             <button
               onClick={handleTestKey}
               disabled={isTesting || (!keyInput && !savedKey)}
-              className="px-3 py-1.5 text-xs font-semibold bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+              className="px-3 py-2 text-xs font-semibold bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-xl transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
             >
               {isTesting ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
-                <Sparkles className="w-3 h-3 text-indigo-400" />
+                <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
               )}
               <span>Test Key</span>
             </button>
@@ -239,10 +322,10 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
                 handleSave();
                 onClose();
               }}
-              className="px-4 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg shadow-sm shadow-indigo-600/30 transition-colors cursor-pointer flex items-center gap-1.5"
+              className="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-md shadow-indigo-600/30 transition-colors cursor-pointer flex items-center gap-1.5"
             >
               <Check className="w-3.5 h-3.5" />
-              <span>Save & Close</span>
+              <span>Save & Connect</span>
             </button>
           </div>
         </div>
