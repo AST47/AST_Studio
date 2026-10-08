@@ -4,6 +4,15 @@ import {
   enhanceClientScript,
   getStoredApiKey,
 } from "./clientGeminiService";
+import {
+  recordRequest,
+  recordQuotaExceeded,
+  getQuotaStatus,
+  parseGeminiError,
+  subscribeToQuota,
+} from "./quotaTracker";
+
+export { subscribeToQuota };
 
 export interface GenerateSingleTtsRequest {
   mode: "single";
@@ -74,7 +83,27 @@ export async function requestTts(
 
     // If 404 on static host (like GitHub Pages where /api/tts doesn't exist), try client fallback
     if (response.status === 404 || !contentType.includes("application/json")) {
-      return await generateClientSpeech(params as any);
+      try {
+        const clientRes = await generateClientSpeech(params as any);
+        recordRequest();
+        return {
+          ...clientRes,
+          quotaStatus: getQuotaStatus(),
+        };
+      } catch (clientErr: any) {
+        if (clientErr.message === "NO_API_KEY") {
+          throw new ApiError(
+            "API_KEY_REQUIRED",
+            false,
+            "Please click the 'API Key' button in the top bar to connect your Google Gemini API key for this static site."
+          );
+        }
+        const parsed = parseGeminiError(clientErr);
+        if (parsed.isQuota) {
+          recordQuotaExceeded(parsed.retrySeconds, parsed.isDaily);
+        }
+        throw new ApiError(parsed.message, parsed.isQuota, parsed.details, parsed.retrySeconds);
+      }
     }
 
     if (!response.ok) {
@@ -93,9 +122,14 @@ export async function requestTts(
         errorMessage = `Server returned status ${response.status}`;
       }
 
+      if (isQuotaExceeded) {
+        recordQuotaExceeded(retryDelaySeconds || 45);
+      }
+
       throw new ApiError(errorMessage, isQuotaExceeded, details, retryDelaySeconds);
     }
 
+    recordRequest();
     return response.json();
   } catch (err: any) {
     if (err instanceof ApiError) {
@@ -103,7 +137,12 @@ export async function requestTts(
     }
     // Network failure or static environment without Express server
     try {
-      return await generateClientSpeech(params as any);
+      const clientRes = await generateClientSpeech(params as any);
+      recordRequest();
+      return {
+        ...clientRes,
+        quotaStatus: getQuotaStatus(),
+      };
     } catch (clientErr: any) {
       if (clientErr.message === "NO_API_KEY") {
         throw new ApiError(
@@ -112,9 +151,11 @@ export async function requestTts(
           "Please click the 'API Key' button in the top bar to connect your Google Gemini API key for this static site."
         );
       }
-      const raw = clientErr?.message || String(clientErr);
-      const isQuota = raw.includes("429") || raw.includes("RESOURCE_EXHAUSTED");
-      throw new ApiError(raw, isQuota, isQuota ? "Gemini API rate limit reached. Please wait 30 seconds." : undefined);
+      const parsed = parseGeminiError(clientErr);
+      if (parsed.isQuota) {
+        recordQuotaExceeded(parsed.retrySeconds, parsed.isDaily);
+      }
+      throw new ApiError(parsed.message, parsed.isQuota, parsed.details, parsed.retrySeconds);
     }
   }
 }
@@ -187,29 +228,22 @@ export async function checkServerHealth(): Promise<{ status: string; hasApiKey: 
 }
 
 export async function fetchQuotaStatus(): Promise<QuotaStatus> {
+  const localStatus = getQuotaStatus();
   try {
     const res = await fetch("/api/quota-status");
     if (!res.ok) {
+      return localStatus;
+    }
+    const serverStatus = await res.json();
+    // Prioritize active cooldown or higher local request counts
+    if (localStatus.cooldownRemaining > (serverStatus.cooldownRemaining || 0) || localStatus.requestsInLastMinute > (serverStatus.requestsInLastMinute || 0)) {
       return {
-        requestsInLastMinute: 0,
-        freeTierRpmLimit: 5,
-        secondsUntilNextWindowSlot: 0,
-        cooldownRemaining: 0,
-        sessionGenerationsCount: 0,
-        isThrottled: false,
-        hasApiKey: true,
+        ...serverStatus,
+        ...localStatus,
       };
     }
-    return res.json();
+    return serverStatus;
   } catch {
-    return {
-      requestsInLastMinute: 0,
-      freeTierRpmLimit: 5,
-      secondsUntilNextWindowSlot: 0,
-      cooldownRemaining: 0,
-      sessionGenerationsCount: 0,
-      isThrottled: false,
-      hasApiKey: false,
-    };
+    return localStatus;
   }
 }

@@ -81,6 +81,8 @@ export const QuotaHUD: React.FC<QuotaHUDProps> = ({
           <span className="text-[10px] text-neutral-400 border-l border-neutral-700 pl-2">
             {localCooldown > 0 ? (
               <span className="text-red-400 font-bold">Cooldown {localCooldown}s</span>
+            ) : isAtLimit ? (
+              <span className="text-red-400 font-bold">Cooldown {localWindowSecs || 30}s</span>
             ) : localWindowSecs > 0 ? (
               <span>Resets in {localWindowSecs}s</span>
             ) : (
@@ -199,7 +201,9 @@ export const QuotaHUD: React.FC<QuotaHUDProps> = ({
             </div>
 
             <div className="flex justify-between items-center text-[11px] font-mono text-neutral-400 pt-0.5">
-              <span>{isAtLimit ? "Rate limit reached" : isNearLimit ? "Near limit" : "Safe to generate"}</span>
+              <span className={isAtLimit ? "text-red-400 font-bold" : isNearLimit ? "text-amber-400 font-medium" : "text-emerald-400"}>
+                {isAtLimit ? "Rate limit reached (Wait cooldown)" : isNearLimit ? "Near limit" : "Safe to generate"}
+              </span>
               <span>{Math.round((rpm / maxRpm) * 100)}% load</span>
             </div>
           </div>
@@ -207,20 +211,22 @@ export const QuotaHUD: React.FC<QuotaHUDProps> = ({
           {/* Reset Countdown */}
           <div className="p-3 rounded-xl bg-neutral-950/60 border border-neutral-800/80 space-y-1.5">
             <div className="flex items-center justify-between text-xs text-neutral-400 font-mono">
-              <span>Window Reset</span>
-              <Clock className="w-3.5 h-3.5 text-indigo-400" />
+              <span>{localCooldown > 0 || isAtLimit ? "Cooldown Timer" : "Window Reset"}</span>
+              <Clock className={`w-3.5 h-3.5 ${isAtLimit ? "text-red-400" : "text-indigo-400"}`} />
             </div>
 
             <div className="flex items-baseline gap-1.5">
-              <span className="text-xl font-bold font-mono text-neutral-100">
+              <span className={`text-xl font-bold font-mono ${isAtLimit ? "text-red-400 animate-pulse" : "text-neutral-100"}`}>
                 {localCooldown > 0
                   ? `${localCooldown}s`
                   : localWindowSecs > 0
                   ? `${localWindowSecs}s`
+                  : isAtLimit
+                  ? "30s"
                   : "0s"}
               </span>
               <span className="text-[11px] text-neutral-400">
-                {localCooldown > 0 ? "cooldown remaining" : "until next request slot"}
+                {localCooldown > 0 || isAtLimit ? "cooldown remaining" : "until next request slot"}
               </span>
             </div>
 

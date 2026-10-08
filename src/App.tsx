@@ -13,7 +13,7 @@ import { AudioPlayer } from "./components/AudioPlayer";
 import { QuotaHUD } from "./components/QuotaHUD";
 import { ApiKeyModal } from "./components/ApiKeyModal";
 import { VoiceName, GeneratedAudioItem, QuotaStatus } from "./types/tts";
-import { checkServerHealth, fetchQuotaStatus } from "./services/api";
+import { checkServerHealth, fetchQuotaStatus, subscribeToQuota } from "./services/api";
 import { getStoredApiKey } from "./services/clientGeminiService";
 import { SCRIPT_TEMPLATES } from "./data/voices";
 import {
@@ -53,6 +53,14 @@ export default function App() {
   const refreshQuota = () => {
     fetchQuotaStatus().then(setQuotaStatus).catch(console.error);
   };
+
+  // Subscribe to live client and server quota updates
+  useEffect(() => {
+    const unsubscribe = subscribeToQuota((status) => {
+      setQuotaStatus(status);
+    });
+    return unsubscribe;
+  }, []);
 
   // Load history from localStorage and initialize health & quota
   useEffect(() => {

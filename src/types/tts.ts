@@ -67,6 +67,7 @@ export interface QuotaStatus {
   sessionGenerationsCount: number;
   isThrottled: boolean;
   hasApiKey: boolean;
+  isDailyLimitExceeded?: boolean;
   timestamp?: string;
 }
 

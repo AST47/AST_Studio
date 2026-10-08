@@ -14,6 +14,7 @@ import {
   Globe,
   SpellCheck,
   Key,
+  Clock,
 } from "lucide-react";
 import { VoiceName, DialogueTurn, GeneratedAudioItem, QuotaStatus, SupportedLanguage } from "../types/tts";
 import { VOICES_CATALOG, DIALOGUE_TEMPLATES } from "../data/voices";
@@ -729,28 +730,41 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({
             <span className="font-mono">
               Quota: <strong className="text-neutral-200">{quotaStatus?.requestsInLastMinute || 0}/{quotaStatus?.freeTierRpmLimit || 5} RPM</strong>
             </span>
-            {quotaStatus && quotaStatus.cooldownRemaining > 0 ? (
+            {quotaStatus && (quotaStatus.cooldownRemaining > 0 || quotaStatus.isThrottled) ? (
+              <span className="text-red-400 font-bold font-mono animate-pulse">
+                • Rate Limit ({quotaStatus.cooldownRemaining || quotaStatus.secondsUntilNextWindowSlot || 30}s cooldown)
+              </span>
+            ) : quotaStatus && quotaStatus.requestsInLastMinute >= (quotaStatus.freeTierRpmLimit || 5) ? (
               <span className="text-red-400 font-bold font-mono">
-                • Cooldown {quotaStatus.cooldownRemaining}s
+                • Max RPM reached (Resets in {quotaStatus.secondsUntilNextWindowSlot}s)
+              </span>
+            ) : quotaStatus && quotaStatus.requestsInLastMinute >= 4 ? (
+              <span className="text-amber-400 font-medium font-mono">
+                • Near limit ({quotaStatus.freeTierRpmLimit - quotaStatus.requestsInLastMinute} left)
               </span>
             ) : quotaStatus && quotaStatus.secondsUntilNextWindowSlot > 0 ? (
-              <span className="text-neutral-500 font-mono">
-                • Slot reset in {quotaStatus.secondsUntilNextWindowSlot}s
+              <span className="text-neutral-400 font-mono">
+                • Slot resets in {quotaStatus.secondsUntilNextWindowSlot}s
               </span>
             ) : (
-              <span className="text-indigo-400/90 font-mono">• Safe</span>
+              <span className="text-emerald-400/90 font-mono">• Safe</span>
             )}
           </div>
 
           <button
             onClick={handleSynthesizeDialogue}
-            disabled={isGenerating || turns.every((t) => !t.text.trim())}
+            disabled={isGenerating || turns.every((t) => !t.text.trim()) || (quotaStatus?.cooldownRemaining || 0) > 0}
             className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-indigo-500 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-sm shadow-xl shadow-purple-600/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer active:scale-98"
           >
             {isGenerating ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
                 <span>Synthesizing Dialogue...</span>
+              </>
+            ) : (quotaStatus?.cooldownRemaining || 0) > 0 ? (
+              <>
+                <Clock className="w-4 h-4 text-amber-300 animate-spin" />
+                <span>Wait {quotaStatus?.cooldownRemaining}s (Cooldown)</span>
               </>
             ) : (
               <>
