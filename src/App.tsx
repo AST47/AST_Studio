@@ -64,10 +64,12 @@ export default function App() {
 
   // Load history from localStorage and initialize health & quota
   useEffect(() => {
-    // Clear any stale legacy locks
+    // Clear any stale legacy locks and custom banner overrides
     try {
       localStorage.removeItem("ast_studio_daily_quota_exceeded_v1");
       localStorage.removeItem("ast_studio_quota_cooldown_v1");
+      localStorage.removeItem("ast_studio_custom_banner");
+      localStorage.removeItem("ast_studio_custom_ast_logo");
     } catch {}
 
     try {

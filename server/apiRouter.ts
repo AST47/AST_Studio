@@ -22,10 +22,11 @@ apiRouter.post("/save-logo", (req, res) => {
       return res.status(400).json({ error: "Missing dataUrl" });
     }
     const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, "");
-    const buffer = Buffer.from(base64Data, "base64");
-    const targetPath = path.resolve(__dirname, "../public/logo.png");
-    fs.writeFileSync(targetPath, buffer);
-    console.log("Successfully saved official logo to public/logo.png, size:", buffer.length);
+    const targetPath1 = path.resolve(__dirname, "../public/logo.png");
+    const targetPath2 = path.resolve(__dirname, "../public/Logo.png");
+    fs.writeFileSync(targetPath1, buffer);
+    fs.writeFileSync(targetPath2, buffer);
+    console.log("Successfully saved official logo to public/logo.png and Logo.png, size:", buffer.length);
     res.json({ success: true, size: buffer.length });
   } catch (err: any) {
     console.error("Failed to save logo to disk:", err);
