@@ -1,0 +1,58 @@
+<svg version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="10 10 520 100" width="520" height="100" fill="none">
+  <defs>
+    <linearGradient id="P" gradientUnits="userSpaceOnUse"/>
+    <linearGradient id="g1" x2="1" href="#P" gradientTransform="matrix(80,-80,80,80,20,100)">
+      <stop stop-color="#4f46e5"/>
+      <stop offset=".5" stop-color="#9333ea"/>
+      <stop offset="1" stop-color="#ec4899"/>
+    </linearGradient>
+    <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#818cf8"/>
+      <stop offset="100%" stop-color="#c084fc"/>
+    </linearGradient>
+    <filter id="badgeShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#6366f1" flood-opacity="0.25" />
+    </filter>
+    <image width="1302" height="520" id="img1" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABRYAAAIICAYAAAAboLK7AAAQAElEQVR4AexdB3wU1faeu9lsNtma3kloodufDdAV2xNDCCjPrqCIAhZQbIAwIr2IjY6A+tr/8Z4QwK64Cvbnq4o+bCBS0tsm2SSbnf/5ZnPDsOymBxK4+8uXc8u55977zezszLd3ZnWSeAkGBAOCAcGAYEAwIBgQDAgGBAOCAcGAYEAwcKozIOYnGBAMCAbanQEhLLY7pSKgYEAwIBgQDAgGBAOCAcGAYKCtDIj2ggHBgGBAMCAYEAwIBjo/A0JY7PzbSIxQMCAYEAwIBjo7A2J8ggHBgGBAMCAYEAwIBgQDggHBgGDgNGRACIun4UY/3acs5i8YEAwIBgQDggHBgGBAMCAYEAwIBgQDggHBwKnPgJhhxzMghMWO51j0IBgQDAgGBAOCAcHASWJAlmRxrnOSuBfdCgYEA4KBFjIg3AUDggHBgGCgCzIgTra74EYTQxYMCAYEA4IBwYBgoHkMkLDobZ6n8GoZA8JbMCAYEAwIBgQDggHBgGBAMCBJQlgUe4FgQDAgGDjVGRDzEwysigz8f8o8E73l9tTNAAAAAElFTkSuQmCC"/>
+  </defs>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800;900&amp;display=swap');
+    tspan { white-space: pre; }
+    .b { fill: url(#g1); }
+    .inner-box { fill: #0a0a0a; }
+    .c { fill: none; stroke: #818cf8; stroke-linecap: round; stroke-linejoin: round; stroke-width: 3; }
+    .title-font {
+      font-size: 44px;
+      fill: url(#textGrad);
+      font-weight: 900;
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      letter-spacing: -0.03em;
+    }
+    .sub-font {
+      font-size: 14px;
+      fill: #a3a3a3;
+      font-weight: 500;
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    }
+  </style>
+
+  <!-- Wave Badge Icon -->
+  <g filter="url(#badgeShadow)">
+    <path fill-rule="evenodd" class="b" d="m42 20h36c12.2 0 22 9.8 22 22v36c0 12.2-9.8 22-22 22h-36c-12.2 0-22-9.8-22-22v-36c0-12.2 9.8-22 22-22z"/>
+    <path fill-rule="evenodd" class="inner-box" d="m42 23h36c10.5 0 19 8.5 19 19v36c0 10.5-8.5 19-19 19h-36c-10.5 0-19-8.5-19-19v-36c0-10.5 8.5-19 19-19z"/>
+    <path fill-rule="evenodd" class="c" d="m45 61.5q0.6 0 1.1-0.2 0.6-0.3 1-0.7 0.4-0.4 0.7-1 0.2-0.5 0.2-1.1v-6c0-0.8 0.3-1.6 0.9-2.1 0.5-0.6 1.3-0.9 2.1-0.9 0.8 0 1.6 0.3 2.1 0.9 0.6 0.5 0.9 1.3 0.9 2.1v19.5c0 0.8 0.3 1.6 0.9 2.1 0.5 0.6 1.3 0.9 2.1 0.9 0.8 0 1.6-0.3 2.1-0.9 0.6-0.5 0.9-1.3 0.9-2.1v-24c0-0.8 0.3-1.6 0.9-2.1 0.5-0.6 1.3-0.9 2.1-0.9 0.8 0 1.6 0.3 2.1 0.9 0.6 0.5 0.9 1.3 0.9 2.1v19.5c0 0.8 0.3 1.6 0.9 2.1 0.5 0.6 1.3 0.9 2.1 0.9 0.8 0 1.6-0.3 2.1-0.9 0.6-0.5 0.9-1.3 0.9-2.1v-6q0-0.6 0.2-1.1 0.3-0.6 0.7-1 0.4-0.4 1-0.7 0.5-0.2 1.1-0.2"/>
+  </g>
+
+  <!-- User's Custom AST Logo -->
+  <use href="#img1" transform="matrix(.075,0,0,.075,114.24,25.895)"/>
+
+  <!-- Typography: Studio with Indigo-to-Purple Gradient -->
+  <text transform="translate(216,62)">
+    <tspan x="0" y="0" class="title-font">Studio</tspan>
+  </text>
+
+  <!-- Subtitle -->
+  <text transform="translate(122,86)">
+    <tspan x="0" y="0" class="sub-font">Neural Text-to-Speech &amp; Voice Production Suite</tspan>
+  </text>
+</svg>
