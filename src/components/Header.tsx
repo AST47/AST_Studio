@@ -50,13 +50,13 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2.5 sm:gap-3.5 select-none">
             <img
-              src="/Logo.png?v=2"
+              src="./Logo.png?v=3"
               alt="AST Studio - Neural Text-to-Speech & Voice Production Suite"
-              className="h-9 sm:h-11 md:h-12 w-auto object-contain drop-shadow-[0_4px_16px_rgba(99,102,241,0.22)]"
+              className="h-9 sm:h-11 md:h-12 w-auto object-contain drop-shadow-[0_4px_16px_rgba(99,102,241,0.22)] shrink-0"
               onError={(e) => {
                 const target = e.currentTarget;
                 if (!target.src.includes("logo.png")) {
-                  target.src = "/logo.png?v=2";
+                  target.src = "./logo.png?v=3";
                 }
               }}
             />
