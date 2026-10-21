@@ -23,6 +23,10 @@ import {
   Search,
   Volume2,
   SlidersHorizontal,
+  Film,
+  Video,
+  CheckCircle2,
+  Scissors,
 } from "lucide-react";
 import { VoiceName, GeneratedAudioItem, QuotaStatus, SupportedLanguage } from "../types/tts";
 import { VOICES_CATALOG, PRESET_STYLES, SCRIPT_TEMPLATES } from "../data/voices";
@@ -86,6 +90,8 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
   const [showStylePresets, setShowStylePresets] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showLanguageSamples, setShowLanguageSamples] = useState(false);
+  const [showVideoTimingHelper, setShowVideoTimingHelper] = useState(false);
+  const [videoTargetSec, setVideoTargetSec] = useState<number>(4.0);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -577,7 +583,154 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
               <option value="Inspiring, visionary keynote speaker with brisk momentum">💡 Visionary Keynote</option>
             </select>
           </div>
+
+          {/* Video Clip Timing Helper Toggle */}
+          <button
+            type="button"
+            onClick={() => setShowVideoTimingHelper(!showVideoTimingHelper)}
+            className={`px-2.5 py-1 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+              showVideoTimingHelper
+                ? "bg-purple-600 text-white shadow-sm ring-1 ring-purple-400"
+                : "bg-purple-950/40 hover:bg-purple-900/60 text-purple-300 border border-purple-500/30"
+            }`}
+            title="Calculate script word count and timing to fit video clip durations"
+          >
+            <Film className="w-3.5 h-3.5 text-purple-300" />
+            <span>Video Clip Timing</span>
+          </button>
         </div>
+
+        {/* Video Clip Timing & Lip-Sync Calculator */}
+        {showVideoTimingHelper && (
+          <div className="mt-3 pt-3 border-t border-purple-900/40 bg-gradient-to-r from-purple-950/30 via-neutral-900/80 to-purple-950/20 rounded-xl p-3.5 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-purple-400" />
+                <span className="font-bold text-white uppercase tracking-wider">
+                  Video Lip-Sync & Timing Guide
+                </span>
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                  Pre-Generation Calculator
+                </span>
+              </div>
+              <span className="text-[11px] text-neutral-400">
+                Natural speech rate: ~2.3 words/sec (140 WPM)
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              {/* Target Seconds Input */}
+              <div className="bg-neutral-950/70 p-2.5 rounded-lg border border-neutral-800 space-y-1.5">
+                <label className="text-neutral-400 font-medium block">Target Video Length:</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="1"
+                    max="180"
+                    value={videoTargetSec}
+                    onChange={(e) => setVideoTargetSec(Math.max(0.5, parseFloat(e.target.value) || 1))}
+                    className="w-20 bg-neutral-900 border border-neutral-700 rounded px-2 py-1 font-mono font-bold text-white text-center"
+                  />
+                  <span className="font-mono text-neutral-400">seconds</span>
+                </div>
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {[1.5, 3.0, 5.0, 10.0, 15.0].map((sec) => (
+                    <button
+                      key={sec}
+                      type="button"
+                      onClick={() => setVideoTargetSec(sec)}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${
+                        videoTargetSec === sec
+                          ? "bg-purple-600 text-white font-bold"
+                          : "bg-neutral-900 hover:bg-neutral-800 text-neutral-400"
+                      }`}
+                    >
+                      {sec}s
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Word Count Budget */}
+              <div className="bg-neutral-950/70 p-2.5 rounded-lg border border-neutral-800 space-y-1">
+                <span className="text-neutral-400 font-medium block">Word Budget:</span>
+                <div className="text-neutral-200">
+                  Target: <strong className="text-purple-300 font-mono">~{Math.max(1, Math.round(videoTargetSec * 2.33))} words</strong>
+                </div>
+                <div className="text-neutral-400">
+                  Current: <strong className="text-indigo-400 font-mono">{words} words</strong> (~{estimatedSeconds}s)
+                </div>
+                <div className="text-[11px] text-neutral-500 pt-0.5">
+                  {estimatedSeconds > videoTargetSec ? (
+                    <span className="text-amber-400">
+                      ⚡ Trim ~{Math.round((estimatedSeconds - videoTargetSec) * 2.33)} words or use Brisk pace
+                    </span>
+                  ) : estimatedSeconds < videoTargetSec ? (
+                    <span className="text-emerald-400">
+                      ✨ Add ~{Math.round((videoTargetSec - estimatedSeconds) * 2.33)} words or use pauses (...)
+                    </span>
+                  ) : (
+                    <span className="text-emerald-400 font-medium">✓ Word count matches video timing!</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Action: Inject Directive & Pause syntax */}
+              <div className="bg-neutral-950/70 p-2.5 rounded-lg border border-neutral-800 space-y-2 flex flex-col justify-between">
+                <div>
+                  <span className="text-neutral-400 font-medium block">Timing Injection:</span>
+                  <p className="text-[11px] text-neutral-400 leading-snug">
+                    Directs Gemini 3.8 TTS neural tempo for this target duration.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const directive = `Pacing: Deliver within ~${videoTargetSec} seconds with clear, synchronized cadence to match video narration.`;
+                    setStylePrompt((prev) => (prev.trim() ? `${prev.trim()}. ${directive}` : directive));
+                  }}
+                  className="w-full px-2.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-sm shadow-purple-600/30 cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Apply Timing Directive</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Pause & Pacing Tag Reference */}
+            <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-neutral-400 border-t border-neutral-800/60">
+              <span className="font-semibold text-neutral-300">Pacing Tags:</span>
+              <button
+                type="button"
+                onClick={() => insertTag("...")}
+                className="px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-800 hover:border-purple-500/50 text-neutral-300 font-mono"
+                title="Adds ~0.5s pause"
+              >
+                ... (0.5s pause)
+              </button>
+              <button
+                type="button"
+                onClick={() => insertTag("<breath>")}
+                className="px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-800 hover:border-purple-500/50 text-neutral-300 font-mono"
+                title="Adds natural inhale"
+              >
+                &lt;breath&gt;
+              </button>
+              <button
+                type="button"
+                onClick={() => insertTag("—")}
+                className="px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-800 hover:border-purple-500/50 text-neutral-300 font-mono"
+                title="Adds dramatic beat"
+              >
+                — (dramatic beat)
+              </button>
+              <span className="text-neutral-500 ml-auto">
+                After generating, use <strong>Video Lip-Sync</strong> in the player to pitch-lock to exact milliseconds.
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Script & Voice Direction Workspace */}
