@@ -24,7 +24,11 @@ import {
 } from "lucide-react";
 import { GeneratedAudioItem } from "../types/tts";
 import { LANGUAGES } from "../data/languages";
-import { fitAudioToTargetDuration } from "../services/audioTimeStretch";
+import {
+  fitAudioToTargetDuration,
+  padAudioWithSilence,
+  insertSilenceAtTimestamp,
+} from "../services/audioTimeStretch";
 
 interface AudioPlayerProps {
   item: GeneratedAudioItem | null;
@@ -57,8 +61,8 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({ item, onClear }) => {
   const [isVideoMuted, setIsVideoMuted] = useState<boolean>(true);
   const [isExportingSyncedWav, setIsExportingSyncedWav] = useState<boolean>(false);
   const [syncedExportSuccess, setSyncedExportSuccess] = useState<boolean>(false);
-  const [exportSuccessDetails, setExportSuccessDetails] = useState<string | null>(null);
   const [isPreviewingSyncSpeed, setIsPreviewingSyncSpeed] = useState<boolean>(false);
+  const [insertSilenceSec, setInsertSilenceSec] = useState<number>(3.0);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -163,6 +167,71 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({ item, onClear }) => {
       setTimeout(() => setSyncedExportSuccess(false), 6000);
     } catch (err: any) {
       console.error("Failed to fit audio duration:", err);
+    } finally {
+      setIsExportingSyncedWav(false);
+    }
+  };
+
+  // Export silence-padded WAV to hit target duration with 100% natural speech rate
+  const handlePadSilenceToTarget = async (placement: "end" | "start" | "both" = "end") => {
+    if (!item?.audioBase64 || !targetDurationSec || targetDurationSec <= 0) return;
+    setIsExportingSyncedWav(true);
+    setSyncedExportSuccess(false);
+
+    try {
+      const result = await padAudioWithSilence(item.audioBase64, targetDurationSec, placement);
+
+      const a = document.createElement("a");
+      a.href = `data:audio/wav;base64,${result.audioBase64}`;
+      const safeTitle = (item.title || "voiceover")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .slice(0, 24);
+      a.download = `${safeTitle}-padded-${result.duration}s.wav`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      setExportSuccessDetails(
+        `Exported ${result.duration}s WAV with ${result.silenceAddedSec}s pure silence pad (${placement}).`
+      );
+      setSyncedExportSuccess(true);
+      setTimeout(() => setSyncedExportSuccess(false), 6000);
+    } catch (err: any) {
+      console.error("Failed to pad silence:", err);
+    } finally {
+      setIsExportingSyncedWav(false);
+    }
+  };
+
+  // Insert silence gap at current timestamp in existing audio
+  const handleInsertSilenceAtCurrentTime = async () => {
+    if (!item?.audioBase64) return;
+    setIsExportingSyncedWav(true);
+    setSyncedExportSuccess(false);
+
+    try {
+      const splitAt = currentTime > 0 ? currentTime : Number(((item.duration || 4) / 2).toFixed(2));
+      const result = await insertSilenceAtTimestamp(item.audioBase64, splitAt, insertSilenceSec);
+
+      const a = document.createElement("a");
+      a.href = `data:audio/wav;base64,${result.audioBase64}`;
+      const safeTitle = (item.title || "voiceover")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .slice(0, 24);
+      a.download = `${safeTitle}-silence-gap-${result.duration}s.wav`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      setExportSuccessDetails(
+        `Inserted ${insertSilenceSec}s silence at ${splitAt.toFixed(2)}s mark. Clip duration is now ${result.duration}s.`
+      );
+      setSyncedExportSuccess(true);
+      setTimeout(() => setSyncedExportSuccess(false), 6000);
+    } catch (err: any) {
+      console.error("Failed to insert silence:", err);
     } finally {
       setIsExportingSyncedWav(false);
     }
@@ -806,20 +875,59 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({ item, onClear }) => {
                 <button
                   onClick={handleExportSyncedWav}
                   disabled={isExportingSyncedWav}
+                  className="flex-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-neutral-800 hover:bg-neutral-700 text-purple-300 transition-all border border-purple-500/40 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  title="Stretches or compresses voice tempo preserving pitch"
+                >
+                  <FastForward className="w-3 h-3 text-purple-400" />
+                  <span>SOLA Time-Stretch</span>
+                </button>
+
+                <button
+                  onClick={() => handlePadSilenceToTarget("end")}
+                  disabled={isExportingSyncedWav}
                   className="flex-1 px-3.5 py-1.5 rounded-lg text-xs font-bold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white transition-all shadow-md shadow-purple-600/30 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  title="Pads pure digital silence at the end so speech speed remains 100% natural"
                 >
                   {isExportingSyncedWav ? (
                     <>
                       <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>Rendering SOLA...</span>
+                      <span>Processing...</span>
                     </>
                   ) : (
                     <>
                       <Download className="w-3 h-3" />
-                      <span>Export Synced WAV</span>
+                      <span>Pad Silence to {targetDurationSec.toFixed(1)}s</span>
                     </>
                   )}
                 </button>
+              </div>
+
+              {/* Insert Silence in Middle Tool */}
+              <div className="pt-2 border-t border-neutral-800/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-1.5 text-neutral-300 font-medium">
+                  <Pause className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Insert Silence in Audio:</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0.5"
+                    max="30"
+                    value={insertSilenceSec}
+                    onChange={(e) => setInsertSilenceSec(Math.max(0.5, parseFloat(e.target.value) || 1))}
+                    className="w-16 bg-neutral-900 border border-neutral-700 rounded px-2 py-0.5 text-xs font-mono text-white text-center"
+                  />
+                  <span className="text-[11px] font-mono text-neutral-400">sec</span>
+                  <button
+                    onClick={handleInsertSilenceAtCurrentTime}
+                    disabled={isExportingSyncedWav}
+                    className="px-2.5 py-1 rounded bg-purple-950 hover:bg-purple-900 text-purple-200 border border-purple-500/40 text-[11px] font-bold cursor-pointer transition-colors"
+                    title={`Splits audio at ${currentTime > 0 ? currentTime.toFixed(1) + "s" : "middle"} and inserts ${insertSilenceSec}s digital silence`}
+                  >
+                    Insert Silence at {currentTime > 0 ? `${currentTime.toFixed(1)}s` : "Middle"}
+                  </button>
+                </div>
               </div>
 
               {syncedExportSuccess && exportSuccessDetails && (

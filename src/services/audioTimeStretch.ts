@@ -237,3 +237,295 @@ export async function fitAudioToTargetDuration(
     await ctx.close().catch(() => {});
   }
 }
+
+export interface ScriptSegment {
+  type: "speech" | "silence";
+  text?: string;
+  durationSec?: number;
+  isAuto?: boolean;
+}
+
+export const SILENCE_TAG_REGEX = /(?:\[\s*(?:pause|silence|wait|gap)\s*(?::\s*)?(auto|\d+(?:\.\d+)?)\s*(?:s|sec|seconds)?\s*\]|\[\s*(?:pause|silence)\s*\]|<break\s+time=["']?(\d+(?:\.\d+)?)(s|ms)?["']?\s*\/?>|\(\s*(?:(?:pause|silence)\s*(?::\s*)?(\d+(?:\.\d+)?)\s*(?:s|sec|seconds)?|(\d+(?:\.\d+)?)\s*(?:s|sec|seconds)\s+(?:pause|silence))\s*\)|\(\s*(?:pause|silence)\s*\))/gi;
+
+/**
+ * Checks if a script contains explicit silence/pause tags
+ */
+export function hasSilenceTags(text: string): boolean {
+  if (!text) return false;
+  return /(?:\[\s*(?:pause|silence|wait|gap)|<break\s+time=|\(\s*(?:pause|silence|\d+s\s+pause))/i.test(text);
+}
+
+/**
+ * Parses script text into sequential speech parts and silence intervals
+ */
+export function parseScriptPauseSegments(text: string): ScriptSegment[] {
+  if (!text || !text.trim()) return [];
+
+  const segments: ScriptSegment[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  // Reset regex index
+  SILENCE_TAG_REGEX.lastIndex = 0;
+
+  while ((match = SILENCE_TAG_REGEX.exec(text)) !== null) {
+    const speechText = text.substring(lastIndex, match.index).trim();
+    if (speechText) {
+      segments.push({ type: "speech", text: speechText });
+    }
+
+    const tagStr = match[0].toLowerCase();
+    let durationSec = 1.5; // default fallback
+    let isAuto = false;
+
+    if (tagStr.includes("auto")) {
+      isAuto = true;
+      durationSec = 2.0; // default initial placeholder
+    } else if (match[1]) {
+      durationSec = parseFloat(match[1]);
+    } else if (match[2]) {
+      const val = parseFloat(match[2]);
+      durationSec = match[3] === "ms" ? val / 1000 : val;
+    } else if (match[4]) {
+      durationSec = parseFloat(match[4]);
+    } else if (match[5]) {
+      durationSec = parseFloat(match[5]);
+    }
+
+    segments.push({
+      type: "silence",
+      durationSec: Math.max(0.1, Number(durationSec.toFixed(2))),
+      isAuto,
+    });
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  const remaining = text.substring(lastIndex).trim();
+  if (remaining) {
+    segments.push({ type: "speech", text: remaining });
+  }
+
+  return segments;
+}
+
+/**
+ * Pads a base64 WAV with pure digital silence to reach an exact target duration.
+ * Keeps spoken voice at 100% natural conversational pitch and tempo.
+ */
+export async function padAudioWithSilence(
+  audioBase64: string,
+  targetDurationSec: number,
+  placement: "end" | "start" | "both" = "end"
+): Promise<{
+  audioBase64: string;
+  duration: number;
+  silenceAddedSec: number;
+}> {
+  const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+  const ctx = new AudioCtx();
+
+  try {
+    const audioBuffer = await decodeBase64ToAudioBuffer(audioBase64, ctx);
+    const originalDur = audioBuffer.duration;
+    const sampleRate = audioBuffer.sampleRate;
+    const numChannels = audioBuffer.numberOfChannels;
+
+    if (targetDurationSec <= originalDur) {
+      // Audio is already at or above target length, return original
+      return {
+        audioBase64,
+        duration: Number(originalDur.toFixed(2)),
+        silenceAddedSec: 0,
+      };
+    }
+
+    const totalSamples = Math.round(targetDurationSec * sampleRate);
+    const speechSamples = audioBuffer.length;
+    const silenceSamples = Math.max(0, totalSamples - speechSamples);
+    const silenceAddedSec = Number((silenceSamples / sampleRate).toFixed(2));
+
+    let startOffset = 0;
+    if (placement === "start") {
+      startOffset = silenceSamples;
+    } else if (placement === "both") {
+      startOffset = Math.floor(silenceSamples / 2);
+    }
+
+    const newBuffer = ctx.createBuffer(numChannels, totalSamples, sampleRate);
+    for (let c = 0; c < numChannels; c++) {
+      const srcChannel = audioBuffer.getChannelData(c);
+      const destChannel = newBuffer.getChannelData(c); // filled with 0s by default
+      destChannel.set(srcChannel, startOffset);
+    }
+
+    const wavBytes = encodeAudioBufferToWav(newBuffer);
+    const newBase64 = uint8ArrayToBase64(wavBytes);
+    const actualDuration = Number((totalSamples / sampleRate).toFixed(2));
+
+    return {
+      audioBase64: newBase64,
+      duration: actualDuration,
+      silenceAddedSec,
+    };
+  } finally {
+    await ctx.close().catch(() => {});
+  }
+}
+
+/**
+ * Inserts a silence interval of silenceDurationSec into an existing audio at splitSec
+ */
+export async function insertSilenceAtTimestamp(
+  audioBase64: string,
+  splitSec: number,
+  silenceDurationSec: number
+): Promise<{
+  audioBase64: string;
+  duration: number;
+}> {
+  const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+  const ctx = new AudioCtx();
+
+  try {
+    const audioBuffer = await decodeBase64ToAudioBuffer(audioBase64, ctx);
+    const sampleRate = audioBuffer.sampleRate;
+    const numChannels = audioBuffer.numberOfChannels;
+
+    const splitSample = Math.max(0, Math.min(audioBuffer.length, Math.round(splitSec * sampleRate)));
+    const silenceSamples = Math.round(silenceDurationSec * sampleRate);
+    const totalSamples = audioBuffer.length + silenceSamples;
+
+    const newBuffer = ctx.createBuffer(numChannels, totalSamples, sampleRate);
+
+    for (let c = 0; c < numChannels; c++) {
+      const src = audioBuffer.getChannelData(c);
+      const dest = newBuffer.getChannelData(c);
+
+      // Part 1: before split
+      dest.set(src.subarray(0, splitSample), 0);
+      // Silence is already zeros in Web Audio buffer between splitSample and splitSample + silenceSamples
+      // Part 2: after split
+      dest.set(src.subarray(splitSample), splitSample + silenceSamples);
+    }
+
+    const wavBytes = encodeAudioBufferToWav(newBuffer);
+    const newBase64 = uint8ArrayToBase64(wavBytes);
+    const actualDuration = Number((totalSamples / sampleRate).toFixed(2));
+
+    return {
+      audioBase64: newBase64,
+      duration: actualDuration,
+    };
+  } finally {
+    await ctx.close().catch(() => {});
+  }
+}
+
+/**
+ * Stitches multiple audio segments with silence intervals into a single coherent WAV audio file.
+ * If targetDurationSec is supplied and there is an `isAuto` silence segment, that segment dynamically
+ * expands to hit the exact target duration (e.g. 7.00s).
+ */
+export async function assembleSegmentedAudio(
+  speechBuffersBase64: string[],
+  segments: ScriptSegment[],
+  targetDurationSec?: number
+): Promise<{
+  audioBase64: string;
+  duration: number;
+  silenceTotalSec: number;
+}> {
+  const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+  const ctx = new AudioCtx();
+
+  try {
+    // Decode all speech buffers
+    const decodedSpeech: AudioBuffer[] = [];
+    for (const b64 of speechBuffersBase64) {
+      decodedSpeech.push(await decodeBase64ToAudioBuffer(b64, ctx));
+    }
+
+    const sampleRate = decodedSpeech[0]?.sampleRate || 24000;
+    const numChannels = decodedSpeech[0]?.numberOfChannels || 1;
+
+    // Calculate total speech duration
+    let totalSpeechDuration = 0;
+    for (const buf of decodedSpeech) {
+      totalSpeechDuration += buf.duration;
+    }
+
+    // Identify auto-silence segments if target duration is requested
+    const autoSilenceCount = segments.filter((s) => s.type === "silence" && s.isAuto).length;
+    let fixedSilenceTotal = 0;
+    for (const s of segments) {
+      if (s.type === "silence" && !s.isAuto) {
+        fixedSilenceTotal += s.durationSec || 1.5;
+      }
+    }
+
+    let dynamicAutoSilenceDuration = 1.5;
+    if (targetDurationSec && targetDurationSec > totalSpeechDuration + fixedSilenceTotal) {
+      const remainingForAuto = targetDurationSec - (totalSpeechDuration + fixedSilenceTotal);
+      dynamicAutoSilenceDuration = autoSilenceCount > 0 ? remainingForAuto / autoSilenceCount : 1.5;
+    }
+
+    // Build timeline of audio components
+    let totalSamples = 0;
+    let speechIdx = 0;
+    const timeline: { type: "speech" | "silence"; buffer?: AudioBuffer; samples: number; durationSec: number }[] = [];
+
+    for (const seg of segments) {
+      if (seg.type === "speech") {
+        const buf = decodedSpeech[speechIdx++];
+        if (buf) {
+          timeline.push({ type: "speech", buffer: buf, samples: buf.length, durationSec: buf.duration });
+          totalSamples += buf.length;
+        }
+      } else {
+        const dur = seg.isAuto ? dynamicAutoSilenceDuration : (seg.durationSec || 1.5);
+        const samples = Math.round(dur * sampleRate);
+        timeline.push({ type: "silence", samples, durationSec: dur });
+        totalSamples += samples;
+      }
+    }
+
+    // Create master composite buffer
+    const finalBuffer = ctx.createBuffer(numChannels, totalSamples, sampleRate);
+    let sampleOffset = 0;
+    let totalSilenceDuration = 0;
+
+    for (const item of timeline) {
+      if (item.type === "speech" && item.buffer) {
+        for (let c = 0; c < numChannels; c++) {
+          finalBuffer.getChannelData(c).set(item.buffer.getChannelData(c), sampleOffset);
+        }
+        sampleOffset += item.samples;
+      } else {
+        // Silence: samples are already initialized to 0.0
+        totalSilenceDuration += item.durationSec;
+        sampleOffset += item.samples;
+      }
+    }
+
+    let actualDuration = Number((totalSamples / sampleRate).toFixed(2));
+    let finalWavBase64 = uint8ArrayToBase64(encodeAudioBufferToWav(finalBuffer));
+
+    // If targetDurationSec was set, but no auto silence was placed, and pad is needed:
+    if (targetDurationSec && actualDuration < targetDurationSec) {
+      const padded = await padAudioWithSilence(finalWavBase64, targetDurationSec, "end");
+      finalWavBase64 = padded.audioBase64;
+      actualDuration = padded.duration;
+      totalSilenceDuration += padded.silenceAddedSec;
+    }
+
+    return {
+      audioBase64: finalWavBase64,
+      duration: actualDuration,
+      silenceTotalSec: Number(totalSilenceDuration.toFixed(2)),
+    };
+  } finally {
+    await ctx.close().catch(() => {});
+  }
+}
+

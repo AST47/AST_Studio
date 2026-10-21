@@ -654,6 +654,13 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({
                       +laugh
                     </button>
                     <button
+                      onClick={() => insertTagToTurn(turn.id, "[pause 1.5s]")}
+                      className="px-1.5 py-0.5 text-[10px] font-mono bg-purple-950/60 text-purple-300 hover:text-purple-200 rounded border border-purple-500/40"
+                      title="Insert 1.5s silence pause"
+                    >
+                      +1.5s pause
+                    </button>
+                    <button
                       onClick={() => insertTagToTurn(turn.id, "|yeah|")}
                       className="px-1.5 py-0.5 text-[10px] font-mono bg-neutral-900 text-neutral-400 hover:text-neutral-200 rounded border border-neutral-800"
                     >

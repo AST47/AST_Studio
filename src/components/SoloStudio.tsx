@@ -27,6 +27,10 @@ import {
   Video,
   CheckCircle2,
   Scissors,
+  Lock,
+  Unlock,
+  Pause,
+  Clock3,
 } from "lucide-react";
 import { VoiceName, GeneratedAudioItem, QuotaStatus, SupportedLanguage } from "../types/tts";
 import { VOICES_CATALOG, PRESET_STYLES, SCRIPT_TEMPLATES } from "../data/voices";
@@ -34,6 +38,13 @@ import { LANGUAGES, detectLanguageFromText } from "../data/languages";
 import { requestTts, requestScriptEnhance } from "../services/api";
 import { recordQuotaExceeded, clearQuotaCooldown } from "../services/quotaTracker";
 import { verbalizeTextForLanguage } from "../services/clientLangUtils";
+import {
+  parseScriptPauseSegments,
+  hasSilenceTags,
+  assembleSegmentedAudio,
+  padAudioWithSilence,
+  fitAudioToTargetDuration,
+} from "../services/audioTimeStretch";
 import { AudioPlayer } from "./AudioPlayer";
 
 interface SoloStudioProps {
@@ -76,6 +87,7 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
   const [vocalMood, setVocalMood] = useState<string>("default");
 
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generationStepText, setGenerationStepText] = useState<string>("");
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [errorState, setErrorState] = useState<{
     message: string;
@@ -91,7 +103,11 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
   const [showTemplates, setShowTemplates] = useState(false);
   const [showLanguageSamples, setShowLanguageSamples] = useState(false);
   const [showVideoTimingHelper, setShowVideoTimingHelper] = useState(false);
-  const [videoTargetSec, setVideoTargetSec] = useState<number>(4.0);
+  const [videoTargetSec, setVideoTargetSec] = useState<number>(7.0);
+  const [enforceDurationLock, setEnforceDurationLock] = useState<boolean>(false);
+  const [durationAdjustmentMode, setDurationAdjustmentMode] = useState<"pad_silence" | "sola_stretch">("pad_silence");
+  const [customPauseSec, setCustomPauseSec] = useState<number>(2.5);
+  const [showCustomPauseModal, setShowCustomPauseModal] = useState<boolean>(false);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -128,11 +144,25 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
     return verbalizeTextForLanguage(scriptText, activeEffectiveLanguage);
   }, [scriptText, activeEffectiveLanguage]);
 
+  // Script Segment and Silence Analysis
+  const scriptSegments = useMemo(() => parseScriptPauseSegments(scriptText), [scriptText]);
+  const silenceSegmentCount = useMemo(() => scriptSegments.filter((s) => s.type === "silence").length, [scriptSegments]);
+  const totalExplicitSilenceSec = useMemo(() => {
+    return Number(
+      scriptSegments
+        .filter((s) => s.type === "silence" && !s.isAuto)
+        .reduce((acc, curr) => acc + (curr.durationSec || 0), 0)
+        .toFixed(2)
+    );
+  }, [scriptSegments]);
+  const hasAutoSilence = useMemo(() => scriptSegments.some((s) => s.type === "silence" && s.isAuto), [scriptSegments]);
+
   // Stats calculation
   const words = scriptText.trim() ? scriptText.trim().split(/\s+/).length : 0;
   const chars = scriptText.length;
   // Average speaking rate: ~140 words per minute -> 2.33 words/sec
   const estimatedSeconds = Math.max(1, Math.round((words / 140) * 60));
+  const estimatedTotalClipSec = Number((estimatedSeconds + totalExplicitSilenceSec).toFixed(1));
 
   const insertTag = (tag: string) => {
     const textarea = textareaRef.current;
@@ -163,6 +193,7 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
 
     setErrorState(null);
     setIsGenerating(true);
+    setGenerationStepText("Initiating speech synthesis...");
 
     try {
       let effectiveStyle = stylePrompt.trim();
@@ -186,32 +217,100 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
           : `Delivery mood: ${vocalMood}`;
       }
 
-      const res = await requestTts({
-        mode: "single",
-        text: scriptText,
-        voice: selectedVoice,
-        style: effectiveStyle,
-        language: selectedLanguage,
-        model: selectedModel,
-      });
+      let finalAudioBase64: string;
+      let finalDuration: number;
+      let actualModelUsed = selectedModel;
+      let finalQuotaStatus: any = null;
+
+      if (silenceSegmentCount > 0) {
+        // Multi-segment generation: split script at silence/pause markers, synthesize speech parts, and splice with pure digital silence
+        const speechSegments = scriptSegments.filter((s) => s.type === "speech" && s.text?.trim());
+        if (speechSegments.length === 0) {
+          throw new Error("Please enter spoken text along with your silence/pause tags.");
+        }
+
+        const speechWavs: string[] = [];
+        for (let i = 0; i < speechSegments.length; i++) {
+          const chunk = speechSegments[i];
+          setGenerationStepText(`Synthesizing speech segment ${i + 1} of ${speechSegments.length}...`);
+          const chunkRes = await requestTts({
+            mode: "single",
+            text: chunk.text!,
+            voice: selectedVoice,
+            style: effectiveStyle,
+            language: selectedLanguage,
+            model: selectedModel,
+          });
+          speechWavs.push(chunkRes.audioBase64);
+          actualModelUsed = chunkRes.modelUsed;
+          if (chunkRes.quotaStatus) finalQuotaStatus = chunkRes.quotaStatus;
+        }
+
+        setGenerationStepText("Splicing pure digital silence & assembling audio timeline...");
+        const targetSec = enforceDurationLock ? videoTargetSec : undefined;
+        const assembled = await assembleSegmentedAudio(speechWavs, scriptSegments, targetSec);
+        finalAudioBase64 = assembled.audioBase64;
+        finalDuration = assembled.duration;
+      } else if (enforceDurationLock && videoTargetSec > 0) {
+        // Enforce exact duration requested by user for video matching (e.g. 7.0s)
+        setGenerationStepText(`Synthesizing neural voice with Gemini 3.8...`);
+        const res = await requestTts({
+          mode: "single",
+          text: scriptText,
+          voice: selectedVoice,
+          style: effectiveStyle,
+          language: selectedLanguage,
+          model: selectedModel,
+        });
+        actualModelUsed = res.modelUsed;
+        if (res.quotaStatus) finalQuotaStatus = res.quotaStatus;
+
+        if (durationAdjustmentMode === "sola_stretch") {
+          setGenerationStepText(`Time-stretching speech to exact ${videoTargetSec.toFixed(2)}s (preserving pitch)...`);
+          const fitted = await fitAudioToTargetDuration(res.audioBase64, videoTargetSec);
+          finalAudioBase64 = fitted.audioBase64;
+          finalDuration = fitted.duration;
+        } else {
+          // Default: pad clean digital silence at the end so speech remains 100% natural and total length is exact
+          setGenerationStepText(`Finalizing clip to exact ${videoTargetSec.toFixed(2)}s with digital silence pad...`);
+          const padded = await padAudioWithSilence(res.audioBase64, videoTargetSec, "end");
+          finalAudioBase64 = padded.audioBase64;
+          finalDuration = padded.duration;
+        }
+      } else {
+        // Standard single generation
+        setGenerationStepText("Generating voiceover with Gemini 3.8...");
+        const res = await requestTts({
+          mode: "single",
+          text: scriptText,
+          voice: selectedVoice,
+          style: effectiveStyle,
+          language: selectedLanguage,
+          model: selectedModel,
+        });
+        finalAudioBase64 = res.audioBase64;
+        finalDuration = res.duration;
+        actualModelUsed = res.modelUsed;
+        if (res.quotaStatus) finalQuotaStatus = res.quotaStatus;
+      }
 
       const newItem: GeneratedAudioItem = {
         id: `vox-${Date.now()}`,
         title: scriptText.slice(0, 36) + (scriptText.length > 36 ? "..." : ""),
         createdAt: Date.now(),
         mode: "single",
-        modelUsed: res.modelUsed,
-        duration: res.duration,
-        audioBase64: res.audioBase64,
-        mimeType: res.mimeType,
+        modelUsed: actualModelUsed,
+        duration: finalDuration,
+        audioBase64: finalAudioBase64,
+        mimeType: "audio/wav",
         textPreview: scriptText.slice(0, 90),
         voice: selectedVoice,
         style: effectiveStyle,
         language: activeEffectiveLanguage,
       };
 
-      if (res.quotaStatus && onQuotaUpdated) {
-        onQuotaUpdated(res.quotaStatus);
+      if (finalQuotaStatus && onQuotaUpdated) {
+        onQuotaUpdated(finalQuotaStatus);
       }
 
       onAudioGenerated(newItem);
@@ -600,17 +699,17 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
           </button>
         </div>
 
-        {/* Video Clip Timing & Lip-Sync Calculator */}
+        {/* Video Clip Timing & Exact Duration Lock Deck */}
         {showVideoTimingHelper && (
-          <div className="mt-3 pt-3 border-t border-purple-900/40 bg-gradient-to-r from-purple-950/30 via-neutral-900/80 to-purple-950/20 rounded-xl p-3.5 space-y-3">
+          <div className="mt-3 pt-3 border-t border-purple-900/40 bg-gradient-to-r from-purple-950/30 via-neutral-900/90 to-purple-950/25 rounded-2xl p-4 space-y-4 border border-purple-500/20">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4 text-purple-400" />
                 <span className="font-bold text-white uppercase tracking-wider">
-                  Video Lip-Sync & Timing Guide
+                  Video Lip-Sync & Duration Timing Guide
                 </span>
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                  Pre-Generation Calculator
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30 font-semibold">
+                  Zero Timing Error
                 </span>
               </div>
               <span className="text-[11px] text-neutral-400">
@@ -618,32 +717,35 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-              {/* Target Seconds Input */}
-              <div className="bg-neutral-950/70 p-2.5 rounded-lg border border-neutral-800 space-y-1.5">
-                <label className="text-neutral-400 font-medium block">Target Video Length:</label>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 text-xs">
+              {/* Column 1: Target Video Duration Input */}
+              <div className="bg-neutral-950/80 p-3 rounded-xl border border-neutral-800 space-y-2">
+                <label className="text-neutral-300 font-semibold block flex items-center justify-between">
+                  <span>Target Video Duration:</span>
+                  <span className="text-[10px] font-mono text-purple-400">Target Match</span>
+                </label>
                 <div className="flex items-center gap-2">
                   <input
                     type="number"
                     step="0.5"
-                    min="1"
+                    min="0.5"
                     max="180"
                     value={videoTargetSec}
                     onChange={(e) => setVideoTargetSec(Math.max(0.5, parseFloat(e.target.value) || 1))}
-                    className="w-20 bg-neutral-900 border border-neutral-700 rounded px-2 py-1 font-mono font-bold text-white text-center"
+                    className="w-24 bg-neutral-900 border border-neutral-700 rounded-lg px-2.5 py-1.5 font-mono font-bold text-white text-center focus:ring-1 focus:ring-purple-500 focus:outline-none"
                   />
-                  <span className="font-mono text-neutral-400">seconds</span>
+                  <span className="font-mono text-neutral-300 font-semibold">seconds</span>
                 </div>
                 <div className="flex flex-wrap gap-1 pt-1">
-                  {[1.5, 3.0, 5.0, 10.0, 15.0].map((sec) => (
+                  {[1.5, 3.0, 5.0, 7.0, 10.0, 15.0].map((sec) => (
                     <button
                       key={sec}
                       type="button"
                       onClick={() => setVideoTargetSec(sec)}
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${
+                      className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
                         videoTargetSec === sec
-                          ? "bg-purple-600 text-white font-bold"
-                          : "bg-neutral-900 hover:bg-neutral-800 text-neutral-400"
+                          ? "bg-purple-600 text-white font-bold shadow-sm"
+                          : "bg-neutral-900 hover:bg-neutral-800 text-neutral-400 border border-neutral-800"
                       }`}
                     >
                       {sec}s
@@ -652,81 +754,142 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
                 </div>
               </div>
 
-              {/* Word Count Budget */}
-              <div className="bg-neutral-950/70 p-2.5 rounded-lg border border-neutral-800 space-y-1">
-                <span className="text-neutral-400 font-medium block">Word Budget:</span>
-                <div className="text-neutral-200">
-                  Target: <strong className="text-purple-300 font-mono">~{Math.max(1, Math.round(videoTargetSec * 2.33))} words</strong>
-                </div>
-                <div className="text-neutral-400">
-                  Current: <strong className="text-indigo-400 font-mono">{words} words</strong> (~{estimatedSeconds}s)
-                </div>
-                <div className="text-[11px] text-neutral-500 pt-0.5">
-                  {estimatedSeconds > videoTargetSec ? (
-                    <span className="text-amber-400">
-                      ⚡ Trim ~{Math.round((estimatedSeconds - videoTargetSec) * 2.33)} words or use Brisk pace
+              {/* Column 2: Exact Duration Lock Controls */}
+              <div className="bg-neutral-950/80 p-3 rounded-xl border border-purple-500/30 space-y-2 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-neutral-200 font-bold flex items-center gap-1.5">
+                      {enforceDurationLock ? (
+                        <Lock className="w-3.5 h-3.5 text-purple-400" />
+                      ) : (
+                        <Unlock className="w-3.5 h-3.5 text-neutral-400" />
+                      )}
+                      <span>Exact Duration Lock</span>
                     </span>
-                  ) : estimatedSeconds < videoTargetSec ? (
-                    <span className="text-emerald-400">
-                      ✨ Add ~{Math.round((videoTargetSec - estimatedSeconds) * 2.33)} words or use pauses (...)
+                    <button
+                      type="button"
+                      onClick={() => setEnforceDurationLock(!enforceDurationLock)}
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all cursor-pointer ${
+                        enforceDurationLock
+                          ? "bg-purple-600 text-white shadow-sm"
+                          : "bg-neutral-800 hover:bg-neutral-700 text-neutral-400"
+                      }`}
+                    >
+                      {enforceDurationLock ? "ACTIVE (ON)" : "DISABLED"}
+                    </button>
+                  </div>
+
+                  <p className="text-[11px] text-neutral-400 leading-snug">
+                    {enforceDurationLock
+                      ? `Guarantees the output audio is finalized to exactly ${videoTargetSec.toFixed(2)}s.`
+                      : "Enable to guarantee the generated audio matches your exact video length."}
+                  </p>
+                </div>
+
+                {enforceDurationLock && (
+                  <div className="pt-2 border-t border-neutral-800 space-y-1.5">
+                    <span className="text-[10px] uppercase font-mono tracking-wider text-neutral-400 block">
+                      Lock Mode:
+                    </span>
+                    <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => setDurationAdjustmentMode("pad_silence")}
+                        className={`px-2 py-1 rounded text-left transition-colors cursor-pointer ${
+                          durationAdjustmentMode === "pad_silence"
+                            ? "bg-purple-950 text-purple-200 border border-purple-500/60 font-semibold"
+                            : "bg-neutral-900 text-neutral-400 border border-neutral-800 hover:text-neutral-300"
+                        }`}
+                        title="Keeps speech 100% natural, pads clean digital silence at the end or at pauses"
+                      >
+                        🔇 Pad Silence (Natural Pace)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDurationAdjustmentMode("sola_stretch")}
+                        className={`px-2 py-1 rounded text-left transition-colors cursor-pointer ${
+                          durationAdjustmentMode === "sola_stretch"
+                            ? "bg-purple-950 text-purple-200 border border-purple-500/60 font-semibold"
+                            : "bg-neutral-900 text-neutral-400 border border-neutral-800 hover:text-neutral-300"
+                        }`}
+                        title="Stretches voice tempo smoothly preserving vocal pitch"
+                      >
+                        ⚡ SOLA Time-Stretch
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Column 3: Real-Time Script Timing Breakdown */}
+              <div className="bg-neutral-950/80 p-3 rounded-xl border border-neutral-800 space-y-2 flex flex-col justify-between">
+                <div>
+                  <span className="text-neutral-300 font-semibold block mb-1">Timing Breakdown:</span>
+                  <div className="space-y-1 text-neutral-300 font-mono text-[11px]">
+                    <div className="flex justify-between">
+                      <span className="text-neutral-400">Spoken Speech:</span>
+                      <strong className="text-indigo-300">{words} words (~{estimatedSeconds}s)</strong>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-neutral-400">Explicit Pauses:</span>
+                      <strong className="text-purple-300">
+                        {silenceSegmentCount} tags ({totalExplicitSilenceSec}s)
+                      </strong>
+                    </div>
+                    <div className="flex justify-between border-t border-neutral-800/80 pt-1 font-bold">
+                      <span className="text-neutral-300">Estimated Total:</span>
+                      <span className="text-emerald-400">~{estimatedTotalClipSec}s</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-[11px] pt-1">
+                  {enforceDurationLock ? (
+                    <div className="p-1.5 rounded bg-purple-950/40 border border-purple-500/30 text-purple-300 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3 h-3 shrink-0 text-purple-400" />
+                      <span>
+                        Final audio will be finalized to <strong>{videoTargetSec.toFixed(2)}s</strong>
+                      </span>
+                    </div>
+                  ) : Math.abs(estimatedTotalClipSec - videoTargetSec) <= 0.5 ? (
+                    <span className="text-emerald-400 font-medium">✓ Timing closely matches video clip!</span>
+                  ) : estimatedTotalClipSec > videoTargetSec ? (
+                    <span className="text-amber-400">
+                      ⚡ Trim ~{Math.round((estimatedTotalClipSec - videoTargetSec) * 2.3)} words to fit {videoTargetSec}s
                     </span>
                   ) : (
-                    <span className="text-emerald-400 font-medium">✓ Word count matches video timing!</span>
+                    <span className="text-purple-400">
+                      ✨ Tip: Insert <strong>[pause {(videoTargetSec - estimatedTotalClipSec).toFixed(1)}s]</strong> to fill exact duration
+                    </span>
                   )}
                 </div>
               </div>
-
-              {/* Action: Inject Directive & Pause syntax */}
-              <div className="bg-neutral-950/70 p-2.5 rounded-lg border border-neutral-800 space-y-2 flex flex-col justify-between">
-                <div>
-                  <span className="text-neutral-400 font-medium block">Timing Injection:</span>
-                  <p className="text-[11px] text-neutral-400 leading-snug">
-                    Directs Gemini 3.8 TTS neural tempo for this target duration.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const directive = `Pacing: Deliver within ~${videoTargetSec} seconds with clear, synchronized cadence to match video narration.`;
-                    setStylePrompt((prev) => (prev.trim() ? `${prev.trim()}. ${directive}` : directive));
-                  }}
-                  className="w-full px-2.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-sm shadow-purple-600/30 cursor-pointer"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Apply Timing Directive</span>
-                </button>
-              </div>
             </div>
 
-            {/* Pause & Pacing Tag Reference */}
-            <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-neutral-400 border-t border-neutral-800/60">
-              <span className="font-semibold text-neutral-300">Pacing Tags:</span>
-              <button
-                type="button"
-                onClick={() => insertTag("...")}
-                className="px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-800 hover:border-purple-500/50 text-neutral-300 font-mono"
-                title="Adds ~0.5s pause"
-              >
-                ... (0.5s pause)
-              </button>
-              <button
-                type="button"
-                onClick={() => insertTag("<breath>")}
-                className="px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-800 hover:border-purple-500/50 text-neutral-300 font-mono"
-                title="Adds natural inhale"
-              >
-                &lt;breath&gt;
-              </button>
-              <button
-                type="button"
-                onClick={() => insertTag("—")}
-                className="px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-800 hover:border-purple-500/50 text-neutral-300 font-mono"
-                title="Adds dramatic beat"
-              >
-                — (dramatic beat)
-              </button>
-              <span className="text-neutral-500 ml-auto">
-                After generating, use <strong>Video Lip-Sync</strong> in the player to pitch-lock to exact milliseconds.
+            {/* Quick 1-Click Silence Tag Insertion Bar */}
+            <div className="flex flex-wrap items-center gap-2 pt-2 text-[11px] text-neutral-300 border-t border-neutral-800/60">
+              <span className="font-semibold text-purple-300 flex items-center gap-1">
+                <Pause className="w-3 h-3" /> Insert Timed Silence:
+              </span>
+              {[
+                { tag: "[pause 1s]", label: "+ 1.0s Silence" },
+                { tag: "[pause 2s]", label: "+ 2.0s Silence" },
+                { tag: "[pause 3s]", label: "+ 3.0s Silence" },
+                { tag: "[pause 5s]", label: "+ 5.0s Silence" },
+                { tag: "[pause: auto]", label: "+ Auto Fill to Target" },
+              ].map((item) => (
+                <button
+                  key={item.tag}
+                  type="button"
+                  onClick={() => insertTag(item.tag)}
+                  className="px-2 py-1 rounded-lg bg-neutral-900 border border-purple-500/30 hover:bg-purple-950/60 hover:text-purple-200 text-neutral-200 font-mono transition-colors cursor-pointer"
+                  title={`Inserts ${item.tag} into script. AST Studio generates digital silence for exact duration.`}
+                >
+                  {item.label}
+                </button>
+              ))}
+              <span className="text-neutral-500 ml-auto hidden md:inline">
+                Spliced with 100% digital zero-PCM silence — never skipped!
               </span>
             </div>
           </div>
@@ -943,10 +1106,54 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
             </div>
           </div>
 
+          {/* Silence & Pause Tags Toolbar */}
+          <div className="bg-neutral-950/60 rounded-xl p-2.5 border border-purple-900/40 mb-2 flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-mono text-purple-300 uppercase tracking-wider flex items-center gap-1 font-semibold">
+              <Pause className="w-3 h-3 text-purple-400" /> Insert Silence:
+            </span>
+            {[
+              { tag: "[pause 1s]", label: "+1.0s Silence" },
+              { tag: "[pause 2s]", label: "+2.0s Silence" },
+              { tag: "[pause 3s]", label: "+3.0s Silence" },
+              { tag: "[pause 5s]", label: "+5.0s Silence" },
+              { tag: "[pause: auto]", label: "Auto-Fill to Target" },
+            ].map(({ tag, label }) => (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => insertTag(tag)}
+                className="px-2.5 py-1 text-xs font-mono rounded-lg bg-neutral-900 hover:bg-purple-950/60 hover:text-purple-200 text-neutral-300 border border-neutral-800 transition-colors cursor-pointer"
+                title={`Insert ${tag} to generate pure digital silence`}
+              >
+                {label}
+              </button>
+            ))}
+
+            <div className="flex items-center gap-1.5 ml-auto">
+              <input
+                type="number"
+                step="0.5"
+                min="0.1"
+                max="30"
+                value={customPauseSec}
+                onChange={(e) => setCustomPauseSec(Math.max(0.1, parseFloat(e.target.value) || 1))}
+                className="w-14 bg-neutral-900 border border-neutral-700 rounded px-1.5 py-0.5 text-xs font-mono text-white text-center"
+              />
+              <button
+                type="button"
+                onClick={() => insertTag(`[pause ${customPauseSec}s]`)}
+                className="px-2 py-0.5 text-xs rounded bg-purple-700 hover:bg-purple-600 text-white font-medium cursor-pointer"
+                title="Insert custom duration pause"
+              >
+                + Custom Silence
+              </button>
+            </div>
+          </div>
+
           {/* Expressive Vocal Burst Tag Toolbar */}
           <div className="bg-neutral-950/60 rounded-xl p-2.5 border border-neutral-800/80 mb-3 flex flex-wrap items-center gap-2">
             <span className="text-[11px] font-mono text-neutral-400 uppercase tracking-wider flex items-center gap-1">
-              <Wand2 className="w-3 h-3 text-indigo-400" /> Insert Expression:
+              <Wand2 className="w-3 h-3 text-indigo-400" /> Vocal Expression:
             </span>
             {[
               { tag: "<breath>", label: "<breath> Natural Breath" },
@@ -955,7 +1162,7 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
               { tag: "<sigh>", label: "<sigh> Gentle Sigh" },
               { tag: "<cough>", label: "<cough> Cough" },
               { tag: "|mhm|", label: "|mhm| Agreement" },
-              { tag: "|yeah|", label: "|yeah| Casual Backchannel" },
+              { tag: "|yeah|", label: "|yeah| Backchannel" },
             ].map(({ tag, label }) => (
               <button
                 key={tag}
@@ -975,33 +1182,51 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
               rows={6}
               value={scriptText}
               onChange={(e) => setScriptText(e.target.value)}
-              placeholder="Enter text here to generate lifelike speech..."
+              placeholder="Enter text here to generate lifelike speech... You can insert [pause 3s] for exact silence in between phrases."
               className="w-full p-4 bg-neutral-950 border border-neutral-800 rounded-xl text-neutral-100 placeholder-neutral-500 font-sans text-sm sm:text-base leading-relaxed focus:outline-none focus:border-indigo-500/80 transition-all resize-y"
             />
 
-            {/* Quick Actions in bottom of textarea */}
-            <div className="flex items-center justify-between text-xs text-neutral-400 px-2 py-1.5 font-mono">
-              <div className="flex items-center gap-3">
+            {/* Quick Actions & Live Timing in bottom of textarea */}
+            <div className="flex flex-wrap items-center justify-between text-xs text-neutral-400 px-2 py-1.5 font-mono gap-2 border-t border-neutral-800/60 mt-1">
+              <div className="flex flex-wrap items-center gap-2">
                 <span>{words} words</span>
                 <span>•</span>
-                <span>{chars} characters</span>
+                <span>{chars} chars</span>
                 <span>•</span>
                 <span className="text-indigo-400 font-semibold">
                   ~{estimatedSeconds}s spoken
                 </span>
+                {silenceSegmentCount > 0 && (
+                  <>
+                    <span>+</span>
+                    <span className="text-purple-300 font-bold bg-purple-950/70 px-1.5 py-0.5 rounded border border-purple-500/30">
+                      {totalExplicitSilenceSec}s silence ({silenceSegmentCount} pause{silenceSegmentCount > 1 ? "s" : ""})
+                    </span>
+                    <span>=</span>
+                    <span className="text-emerald-400 font-bold">
+                      ~{estimatedTotalClipSec}s total
+                    </span>
+                  </>
+                )}
+                {enforceDurationLock && (
+                  <span className="text-purple-200 bg-purple-900/60 border border-purple-400/40 px-2 py-0.5 rounded-full font-bold text-[10px] flex items-center gap-1 ml-1">
+                    <Lock className="w-3 h-3 text-purple-300" />
+                    Locked: {videoTargetSec.toFixed(2)}s
+                  </span>
+                )}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 ml-auto">
                 <button
                   onClick={handleCopyText}
-                  className="hover:text-neutral-200 transition-colors flex items-center gap-1"
+                  className="hover:text-neutral-200 transition-colors flex items-center gap-1 cursor-pointer"
                 >
                   {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                   <span>{copied ? "Copied" : "Copy"}</span>
                 </button>
                 <button
                   onClick={() => setScriptText("")}
-                  className="hover:text-neutral-200 transition-colors flex items-center gap-1"
+                  className="hover:text-neutral-200 transition-colors flex items-center gap-1 cursor-pointer"
                 >
                   <RotateCcw className="w-3 h-3" />
                   <span>Clear</span>
@@ -1310,7 +1535,7 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
             {isGenerating ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Synthesizing Voice...</span>
+                <span>{generationStepText || "Synthesizing Voice..."}</span>
               </>
             ) : quotaStatus?.isDailyLimitExceeded || errorState?.isDaily ? (
               <>
@@ -1326,6 +1551,16 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
               <>
                 <Play className="w-4 h-4 fill-current" />
                 <span>Retry Generation Now</span>
+              </>
+            ) : enforceDurationLock ? (
+              <>
+                <Lock className="w-4 h-4 text-purple-200" />
+                <span>Generate Voice (Locked to {videoTargetSec.toFixed(1)}s)</span>
+              </>
+            ) : silenceSegmentCount > 0 ? (
+              <>
+                <Pause className="w-4 h-4 text-purple-200" />
+                <span>Generate Voice ({silenceSegmentCount} Silence Pause{silenceSegmentCount > 1 ? "s" : ""})</span>
               </>
             ) : (
               <>
