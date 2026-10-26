@@ -289,24 +289,22 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({
         err.message === "API_KEY_REQUIRED" ||
         err.message?.includes("API_KEY") ||
         err.message?.includes("API key");
-      const delaySecs = err.retryDelaySeconds || (isDaily ? 3600 : 45);
+      const delaySecs = err.retryDelaySeconds || err.retrySeconds || (isDaily ? 150 : 30);
 
       if (isQuota) {
         const updatedQuota = recordQuotaExceeded(delaySecs, isDaily);
         if (onQuotaUpdated) onQuotaUpdated(updatedQuota);
 
-        if (!isDaily) {
-          setRetryCountdown(delaySecs);
-          const timer = setInterval(() => {
-            setRetryCountdown((prev) => {
-              if (prev <= 1) {
-                clearInterval(timer);
-                return 0;
-              }
-              return prev - 1;
-            });
-          }, 1000);
-        }
+        setRetryCountdown(delaySecs);
+        const timer = setInterval(() => {
+          setRetryCountdown((prev) => {
+            if (prev <= 1) {
+              clearInterval(timer);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
       }
 
       setErrorState({
@@ -746,6 +744,33 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({
                 </details>
               )}
               <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-red-800/50">
+                <button
+                  type="button"
+                  onClick={handleSynthesizeDialogue}
+                  disabled={isGenerating || Math.max(retryCountdown, quotaStatus?.cooldownRemaining || 0) > 0}
+                  className="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-semibold text-xs cursor-pointer transition-colors shadow-sm flex items-center gap-1.5"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>
+                    {Math.max(retryCountdown, quotaStatus?.cooldownRemaining || 0) > 0
+                      ? `Retry Now (or wait ${Math.max(retryCountdown, quotaStatus?.cooldownRemaining || 0)}s)`
+                      : "Retry Generation Now"}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearQuotaCooldown();
+                    setRetryCountdown(0);
+                    setErrorState(null);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-medium text-xs border border-neutral-700 cursor-pointer transition-colors"
+                  title="Reset cooldown immediately"
+                >
+                  Clear Cooldown
+                </button>
+
                 {onOpenApiKeyModal && (
                   <button
                     type="button"
@@ -970,47 +995,69 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({
             )}
           </div>
 
-          <button
-            onClick={
-              quotaStatus?.isDailyLimitExceeded || errorState?.isDaily
-                ? onOpenApiKeyModal
-                : handleSynthesizeDialogue
-            }
-            disabled={
-              isGenerating ||
-              turns.every((t) => !t.text.trim()) ||
-              (retryCountdown > 0 && !(quotaStatus?.isDailyLimitExceeded || errorState?.isDaily)) ||
-              ((quotaStatus?.cooldownRemaining || 0) > 0 && !(quotaStatus?.isDailyLimitExceeded || errorState?.isDaily))
-            }
-            className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-indigo-500 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-sm shadow-xl shadow-purple-600/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer active:scale-98"
-          >
-            {isGenerating ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Synthesizing Dialogue...</span>
-              </>
-            ) : quotaStatus?.isDailyLimitExceeded || errorState?.isDaily ? (
-              <>
-                <Key className="w-4 h-4 text-amber-300" />
-                <span>Switch Key (Daily Limit Reached)</span>
-              </>
-            ) : retryCountdown > 0 || (quotaStatus?.cooldownRemaining || 0) > 0 ? (
-              <>
-                <Clock className="w-4 h-4 text-amber-300 animate-spin" />
-                <span>Wait {Math.max(retryCountdown, quotaStatus?.cooldownRemaining || 0)}s (Cooldown)</span>
-              </>
-            ) : errorState ? (
-              <>
-                <Play className="w-4 h-4 fill-current" />
-                <span>Retry Generation Now</span>
-              </>
-            ) : (
-              <>
-                <Play className="w-4 h-4 fill-current" />
-                <span>Render Full Dialogue (WAV)</span>
-              </>
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            {errorState && (
+              <div className="flex items-center gap-2 mr-auto sm:mr-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearQuotaCooldown();
+                    setRetryCountdown(0);
+                    setErrorState(null);
+                  }}
+                  className="px-3 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-medium text-xs border border-neutral-700 cursor-pointer transition-colors"
+                  title="Clear cooldown timer and retry"
+                >
+                  Clear Cooldown
+                </button>
+
+                {onOpenApiKeyModal && (
+                  <button
+                    type="button"
+                    onClick={onOpenApiKeyModal}
+                    className="px-3 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-medium text-xs border border-neutral-700 flex items-center gap-1.5 cursor-pointer transition-colors"
+                    title="Switch or enter a new Gemini API key"
+                  >
+                    <Key className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Switch Key</span>
+                  </button>
+                )}
+              </div>
             )}
-          </button>
+
+            <button
+              onClick={handleSynthesizeDialogue}
+              disabled={
+                isGenerating ||
+                turns.every((t) => !t.text.trim()) ||
+                retryCountdown > 0 ||
+                (quotaStatus?.cooldownRemaining || 0) > 0
+              }
+              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-indigo-500 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-sm shadow-xl shadow-purple-600/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer active:scale-98"
+            >
+              {isGenerating ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Synthesizing Dialogue...</span>
+                </>
+              ) : retryCountdown > 0 || (quotaStatus?.cooldownRemaining || 0) > 0 ? (
+                <>
+                  <Clock className="w-4 h-4 text-amber-300 animate-spin" />
+                  <span>Wait {Math.max(retryCountdown, quotaStatus?.cooldownRemaining || 0)}s (Cooldown)</span>
+                </>
+              ) : errorState ? (
+                <>
+                  <Play className="w-4 h-4 fill-current" />
+                  <span>Retry Generation Now</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4 fill-current" />
+                  <span>Render Full Dialogue (WAV)</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 

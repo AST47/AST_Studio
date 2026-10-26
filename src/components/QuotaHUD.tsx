@@ -14,6 +14,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { QuotaStatus } from "../types/tts";
+import { resetGenerationsCount } from "../services/quotaTracker";
 
 interface QuotaHUDProps {
   quota: QuotaStatus;
@@ -29,6 +30,12 @@ export const QuotaHUD: React.FC<QuotaHUDProps> = ({
   const [showModal, setShowModal] = useState(false);
   const [localWindowSecs, setLocalWindowSecs] = useState(quota.secondsUntilNextWindowSlot);
   const [localCooldown, setLocalCooldown] = useState(quota.cooldownRemaining);
+
+  const handleResetTodayCount = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    resetGenerationsCount();
+    if (onRefresh) onRefresh();
+  };
 
   useEffect(() => {
     setLocalWindowSecs(quota.secondsUntilNextWindowSlot);
@@ -246,23 +253,33 @@ export const QuotaHUD: React.FC<QuotaHUDProps> = ({
             </p>
           </div>
 
-          {/* Session Total & Key Status */}
+          {/* Today's Activity & Reset */}
           <div className="p-3 rounded-xl bg-neutral-950/60 border border-neutral-800/80 space-y-1.5">
             <div className="flex items-center justify-between text-xs text-neutral-400 font-mono">
-              <span>Session Activity</span>
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Today's Activity</span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleResetTodayCount}
+                  title="Reset today's clip counter"
+                  className="px-1.5 py-0.5 rounded text-[10px] bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer"
+                >
+                  Reset
+                </button>
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              </div>
             </div>
 
             <div className="flex items-baseline gap-1.5">
               <span className="text-xl font-bold font-mono text-indigo-400">
                 {quota.sessionGenerationsCount || 0}
               </span>
-              <span className="text-[11px] text-neutral-400">clips rendered</span>
+              <span className="text-[11px] text-neutral-400">clips today</span>
             </div>
 
             <p className="text-[11px] text-neutral-400 flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              API Key Connected & Active
+              <span>Auto-resets daily (midnight PT)</span>
             </p>
           </div>
         </div>
@@ -318,44 +335,68 @@ const QuotaInfoModal: React.FC<QuotaInfoModalProps> = ({ quota, onClose }) => {
           </div>
         </div>
 
-        <div className="space-y-3 text-xs text-neutral-300 leading-relaxed">
-          <div className="p-3 bg-neutral-950 rounded-xl border border-neutral-800 space-y-2">
-            <h4 className="font-bold text-neutral-200 flex items-center gap-1.5">
-              <Zap className="w-4 h-4 text-amber-400" />
-              What are the rate limits for Text-to-Speech?
+        <div className="space-y-3 text-xs text-neutral-300 leading-relaxed max-h-[60vh] overflow-y-auto pr-1">
+          {/* Daily Limit Explanation */}
+          <div className="p-3 bg-red-950/30 rounded-xl border border-red-800/40 space-y-1.5">
+            <h4 className="font-bold text-red-300 flex items-center gap-1.5">
+              <Zap className="w-4 h-4 text-red-400" />
+              Daily Limit: 10 Audio Requests / Day on Free Tier
             </h4>
-            <ul className="space-y-1.5 list-disc list-inside text-neutral-400">
-              <li>
-                <strong className="text-neutral-300">RPM (Requests Per Minute):</strong> Google Gemini free-tier enforces a strict rate limit of approximately <strong>3 to 5 audio generation requests per minute</strong>.
-              </li>
-              <li>
-                <strong className="text-neutral-300">Rolling 60-Second Window:</strong> Each request occupies a slot for 60 seconds. Once 60 seconds pass, the slot frees up.
-              </li>
-              <li>
-                <strong className="text-neutral-300">High Token Bandwidth:</strong> Neural speech produces rich 24kHz audio waveforms, which consume quota faster than simple text queries.
-              </li>
+            <p className="text-[11px] text-neutral-300 leading-relaxed">
+              Google AI Studio enforces a strict hard cap of <strong>10 requests per day per project</strong> on preview audio models (such as <code className="bg-black/40 px-1 py-0.5 rounded text-amber-300">gemini-3.8-flash-lite-tts</code>).
+            </p>
+            <p className="text-[11px] text-neutral-400">
+              When Google returns <code className="bg-black/40 px-1 py-0.5 rounded text-red-300">Generate content requests per day limit exceeded</code>, this quota resets at <strong>midnight Pacific Time (PT)</strong>.
+            </p>
+          </div>
+
+          {/* Pause segments consuming quota */}
+          <div className="p-3 bg-amber-950/25 rounded-xl border border-amber-800/40 space-y-1.5">
+            <h4 className="font-bold text-amber-300 flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 text-amber-400" />
+              Why Did I Hit The Limit After Only 3 to 5 Clips?
+            </h4>
+            <p className="text-[11px] text-neutral-300 leading-relaxed">
+              When your script uses silence pause tags like <code className="bg-black/40 px-1 py-0.5 rounded text-amber-300">[pause 2s]</code>, AST Studio splits your text into spoken segments, generates each part with Gemini, and seamlessly joins them with digital silence.
+            </p>
+            <p className="text-[11px] text-neutral-400">
+              A script with 1 pause tag makes <strong>2 API calls</strong>. Generating 3 clips with pauses consumes 6 to 8 of your 10 daily requests!
+            </p>
+          </div>
+
+          {/* Zero-Quota Browser Tools */}
+          <div className="p-3 bg-emerald-950/25 rounded-xl border border-emerald-800/40 space-y-1.5">
+            <h4 className="font-bold text-emerald-300 flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              Pro-Tip: 0-Quota Client-Side Timing Tools
+            </h4>
+            <p className="text-[11px] text-neutral-300 leading-relaxed">
+              AST Studio includes 100% free, local browser audio DSP tools inside the <strong>Audio Player</strong> below:
+            </p>
+            <ul className="space-y-1 list-disc list-inside text-[11px] text-neutral-400">
+              <li><strong>Pad Silence to Exact Video Length:</strong> Pads the clip to exactly 7.0s or any duration using Web Audio API (0 API calls, 0 quota).</li>
+              <li><strong>Insert Silence Gap:</strong> Adds custom silence anywhere inside your audio in your browser (0 API calls).</li>
             </ul>
           </div>
 
-          <div className="p-3 bg-neutral-950 rounded-xl border border-neutral-800 space-y-2">
+          {/* Rate Limit RPM */}
+          <div className="p-3 bg-neutral-950 rounded-xl border border-neutral-800 space-y-1.5">
             <h4 className="font-bold text-neutral-200 flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              Best practices to avoid hitting the 429 quota:
+              <Clock className="w-4 h-4 text-indigo-400" />
+              Rolling 60-Second Window (3 to 5 RPM)
             </h4>
-            <ul className="space-y-1 list-disc list-inside text-neutral-400">
-              <li>Space out consecutive speech generations by 10 to 15 seconds.</li>
-              <li>Use <strong>Flash-Lite TTS</strong> for drafting or testing lines before rendering the final studio track.</li>
-              <li>Keep short auditions to 1 or 2 voices at a time.</li>
-            </ul>
+            <p className="text-[11px] text-neutral-400 leading-relaxed">
+              In addition to the daily limit, Google limits requests to 3–5 per minute. If you hit a rate limit, the live countdown displays the exact remaining delay (e.g. 150s) and unlocks automatically.
+            </p>
           </div>
 
           <div className="p-3 bg-indigo-950/30 rounded-xl border border-indigo-800/40 text-neutral-300 space-y-1">
             <h4 className="font-bold text-indigo-300 flex items-center gap-1.5">
               <Sparkles className="w-4 h-4 text-indigo-400" />
-              Need unlimited throughput?
+              Need higher quota?
             </h4>
             <p className="text-[11px] text-neutral-400">
-              You can connect a pay-as-you-go Google Cloud project to your Gemini API key in Google AI Studio. Simply update your key in the AI Studio <strong>Settings &gt; Secrets</strong> panel for enterprise throughput.
+              Create another free API key in Google AI Studio (<code className="text-neutral-300">aistudio.google.com/apikey</code>) and click <strong>Switch Key</strong>, or enable Pay-As-You-Go billing in Google Cloud for enterprise throughput.
             </p>
           </div>
         </div>

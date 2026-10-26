@@ -7,11 +7,33 @@ import {
   verbalizeTextForLanguage,
 } from "./clientLangUtils";
 
+import { parseGeminiError } from "./quotaTracker";
+
 const LOCAL_STORAGE_KEY = "ast_studio_gemini_api_key";
+const LOCAL_STORAGE_KEYS_POOL = "ast_studio_gemini_api_keys_pool";
+const LOCAL_STORAGE_AUTO_ROTATE = "ast_studio_gemini_auto_rotate_keys";
+
+export function getStoredApiKeys(): string[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_KEYS_POOL);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const cleaned = parsed.filter((k) => typeof k === "string" && k.trim().length > 0);
+        if (cleaned.length > 0) return cleaned;
+      }
+    }
+  } catch {}
+  const legacy = localStorage.getItem(LOCAL_STORAGE_KEY);
+  return legacy ? [legacy.trim()] : [];
+}
 
 export function getStoredApiKey(): string {
   try {
-    return localStorage.getItem(LOCAL_STORAGE_KEY) || "";
+    const active = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (active && active.trim()) return active.trim();
+    const pool = getStoredApiKeys();
+    return pool[0] || "";
   } catch {
     return "";
   }
@@ -19,18 +41,111 @@ export function getStoredApiKey(): string {
 
 export function setStoredApiKey(key: string): void {
   try {
-    localStorage.setItem(LOCAL_STORAGE_KEY, key.trim());
+    const cleanKey = key.trim();
+    if (!cleanKey) {
+      clearStoredApiKey();
+      return;
+    }
+    localStorage.setItem(LOCAL_STORAGE_KEY, cleanKey);
+    const pool = getStoredApiKeys();
+    if (!pool.includes(cleanKey)) {
+      pool.push(cleanKey);
+      localStorage.setItem(LOCAL_STORAGE_KEYS_POOL, JSON.stringify(pool));
+    }
   } catch (e) {
     console.error("Failed to save API key to localStorage", e);
+  }
+}
+
+export function addStoredApiKeys(rawInput: string): { added: number; total: number } {
+  try {
+    const candidates = rawInput
+      .split(/[\r\n,;\s]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 10);
+
+    const existing = getStoredApiKeys();
+    let addedCount = 0;
+    for (const c of candidates) {
+      if (!existing.includes(c)) {
+        existing.push(c);
+        addedCount++;
+      }
+    }
+    if (existing.length > 0) {
+      localStorage.setItem(LOCAL_STORAGE_KEYS_POOL, JSON.stringify(existing));
+      if (!getStoredApiKey() && existing[0]) {
+        localStorage.setItem(LOCAL_STORAGE_KEY, existing[0]);
+      }
+    }
+    return { added: addedCount, total: existing.length };
+  } catch (e) {
+    console.error("Failed to add keys", e);
+    return { added: 0, total: 0 };
+  }
+}
+
+export function removeStoredApiKey(keyToRemove: string): void {
+  try {
+    const pool = getStoredApiKeys().filter((k) => k !== keyToRemove.trim());
+    localStorage.setItem(LOCAL_STORAGE_KEYS_POOL, JSON.stringify(pool));
+    const active = getStoredApiKey();
+    if (active === keyToRemove.trim()) {
+      const nextActive = pool[0] || "";
+      if (nextActive) {
+        localStorage.setItem(LOCAL_STORAGE_KEY, nextActive);
+      } else {
+        localStorage.removeItem(LOCAL_STORAGE_KEY);
+      }
+    }
+  } catch (e) {
+    console.error("Failed to remove API key", e);
   }
 }
 
 export function clearStoredApiKey(): void {
   try {
     localStorage.removeItem(LOCAL_STORAGE_KEY);
+    localStorage.removeItem(LOCAL_STORAGE_KEYS_POOL);
   } catch (e) {
     console.error("Failed to remove API key from localStorage", e);
   }
+}
+
+export function isAutoRotateEnabled(): boolean {
+  try {
+    const v = localStorage.getItem(LOCAL_STORAGE_AUTO_ROTATE);
+    return v === null ? true : v === "true";
+  } catch {
+    return true;
+  }
+}
+
+export function setAutoRotateEnabled(enabled: boolean): void {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_AUTO_ROTATE, String(enabled));
+  } catch {}
+}
+
+export function rotateToNextApiKey(): {
+  previousKey: string;
+  nextKey: string;
+  index: number;
+  total: number;
+} | null {
+  const pool = getStoredApiKeys();
+  if (pool.length <= 1) return null;
+  const current = getStoredApiKey();
+  const currentIndex = pool.indexOf(current);
+  const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % pool.length;
+  const nextKey = pool[nextIndex];
+  localStorage.setItem(LOCAL_STORAGE_KEY, nextKey);
+  return {
+    previousKey: current,
+    nextKey,
+    index: nextIndex + 1,
+    total: pool.length,
+  };
 }
 
 /**

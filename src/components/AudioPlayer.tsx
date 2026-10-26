@@ -61,6 +61,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({ item, onClear }) => {
   const [isVideoMuted, setIsVideoMuted] = useState<boolean>(true);
   const [isExportingSyncedWav, setIsExportingSyncedWav] = useState<boolean>(false);
   const [syncedExportSuccess, setSyncedExportSuccess] = useState<boolean>(false);
+  const [exportSuccessDetails, setExportSuccessDetails] = useState<string>("");
   const [isPreviewingSyncSpeed, setIsPreviewingSyncSpeed] = useState<boolean>(false);
   const [insertSilenceSec, setInsertSilenceSec] = useState<number>(3.0);
 

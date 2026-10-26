@@ -15,12 +15,21 @@ import {
   Clipboard,
   HelpCircle,
   Zap,
+  Plus,
+  Layers,
+  ArrowRightLeft,
+  CheckCircle2,
 } from "lucide-react";
 import { GoogleGenAI } from "@google/genai";
 import {
   getStoredApiKey,
+  getStoredApiKeys,
   setStoredApiKey,
+  addStoredApiKeys,
+  removeStoredApiKey,
   clearStoredApiKey,
+  isAutoRotateEnabled,
+  setAutoRotateEnabled,
 } from "../services/clientGeminiService";
 import { clearQuotaCooldown, parseGeminiError } from "../services/quotaTracker";
 
@@ -35,90 +44,128 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
   onClose,
   onKeyChanged,
 }) => {
-  const [keyInput, setKeyInput] = useState("");
-  const [savedKey, setSavedKey] = useState("");
-  const [isTesting, setIsTesting] = useState(false);
-  const [showKey, setShowKey] = useState(false);
-  const [testResult, setTestResult] = useState<{
-    success: boolean;
+  const [keysList, setKeysList] = useState<string[]>([]);
+  const [activeKey, setActiveKey] = useState<string>("");
+  const [newKeyInput, setNewKeyInput] = useState("");
+  const [autoRotate, setAutoRotate] = useState<boolean>(true);
+  const [testingKeyIndex, setTestingKeyIndex] = useState<number | null>(null);
+  const [showMaskedKeys, setShowMaskedKeys] = useState<Record<number, boolean>>({});
+  const [feedback, setFeedback] = useState<{
+    type: "success" | "error" | "info";
     message: string;
     rawError?: string;
   } | null>(null);
 
+  const refreshState = () => {
+    const list = getStoredApiKeys();
+    const current = getStoredApiKey();
+    setKeysList(list);
+    setActiveKey(current);
+    setAutoRotate(isAutoRotateEnabled());
+  };
+
   useEffect(() => {
     if (isOpen) {
-      const existing = getStoredApiKey();
-      setSavedKey(existing);
-      setKeyInput(existing);
-      setTestResult(null);
+      refreshState();
+      setFeedback(null);
+      setNewKeyInput("");
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const handleSave = () => {
-    if (!keyInput.trim()) {
-      clearStoredApiKey();
-      clearQuotaCooldown();
-      setSavedKey("");
-      setKeyInput("");
-      setTestResult({
-        success: true,
-        message: "API key removed from browser storage.",
+  const handleAddKeys = () => {
+    const trimmed = newKeyInput.trim();
+    if (!trimmed) {
+      setFeedback({
+        type: "error",
+        message: "Please paste at least one valid Gemini API key.",
       });
-      if (onKeyChanged) onKeyChanged();
       return;
     }
 
-    setStoredApiKey(keyInput.trim());
-    setSavedKey(keyInput.trim());
+    const { added, total } = addStoredApiKeys(trimmed);
+    if (added === 0) {
+      setFeedback({
+        type: "info",
+        message: "Key(s) already exist in your pool or were formatted incorrectly.",
+      });
+    } else {
+      setFeedback({
+        type: "success",
+        message: `Successfully added ${added} key${added > 1 ? "s" : ""} to your pool! Total keys: ${total}.`,
+      });
+      setNewKeyInput("");
+    }
+
     clearQuotaCooldown();
-    setTestResult({
-      success: true,
-      message: "API key successfully saved to browser storage!",
+    refreshState();
+    if (onKeyChanged) onKeyChanged();
+  };
+
+  const handleSetActive = (key: string, index: number) => {
+    setStoredApiKey(key);
+    clearQuotaCooldown();
+    refreshState();
+    setFeedback({
+      type: "success",
+      message: `Key #${index + 1} is now set as your active generation key.`,
     });
     if (onKeyChanged) onKeyChanged();
   };
 
-  const handleClear = () => {
-    clearStoredApiKey();
+  const handleRemoveKey = (key: string, index: number) => {
+    removeStoredApiKey(key);
     clearQuotaCooldown();
-    setSavedKey("");
-    setKeyInput("");
-    setTestResult({
-      success: true,
-      message: "API key removed.",
+    refreshState();
+    setFeedback({
+      type: "info",
+      message: `Removed Key #${index + 1} from your pool.`,
     });
     if (onKeyChanged) onKeyChanged();
+  };
+
+  const handleClearAll = () => {
+    if (window.confirm("Are you sure you want to remove all API keys from this browser?")) {
+      clearStoredApiKey();
+      clearQuotaCooldown();
+      refreshState();
+      setFeedback({
+        type: "info",
+        message: "All keys removed from browser storage.",
+      });
+      if (onKeyChanged) onKeyChanged();
+    }
+  };
+
+  const handleToggleAutoRotate = (enabled: boolean) => {
+    setAutoRotate(enabled);
+    setAutoRotateEnabled(enabled);
+    setFeedback({
+      type: "info",
+      message: enabled
+        ? "Auto-failover enabled: When a key hits its daily quota, the studio will seamlessly switch to the next key."
+        : "Auto-failover disabled: The studio will stay on your selected key.",
+    });
   };
 
   const handlePasteFromClipboard = async () => {
     try {
       const text = await navigator.clipboard.readText();
       if (text) {
-        setKeyInput(text.trim());
+        setNewKeyInput((prev) => (prev ? `${prev}\n${text.trim()}` : text.trim()));
       }
     } catch {
       // Clipboard permission denied or unsupported
     }
   };
 
-  const handleTestKey = async () => {
-    const keyToTest = keyInput.trim() || savedKey;
-    if (!keyToTest) {
-      setTestResult({
-        success: false,
-        message: "Please enter an API key first.",
-      });
-      return;
-    }
-
-    setIsTesting(true);
-    setTestResult(null);
+  const handleTestKey = async (keyToTest: string, index: number) => {
+    setTestingKeyIndex(index);
+    setFeedback(null);
 
     try {
       const ai = new GoogleGenAI({ apiKey: keyToTest });
-      // Direct speech synthesis check on gemini-3.8-flash-lite-tts
       const res = await ai.models.generateContent({
         model: "gemini-3.8-flash-lite-tts",
         contents: [{ role: "user", parts: [{ text: "AST Studio voice check" }] }],
@@ -134,62 +181,63 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
 
       const audioData = res.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
       if (audioData) {
-        setStoredApiKey(keyToTest);
-        setSavedKey(keyToTest);
-        clearQuotaCooldown();
-        setTestResult({
-          success: true,
-          message: "Key is verified and active for Gemini 3.8 Speech (TTS)!",
+        setFeedback({
+          type: "success",
+          message: `Key #${index + 1} is verified and working for Gemini 3.8 Speech (TTS)!`,
         });
-        if (onKeyChanged) onKeyChanged();
       } else {
         throw new Error("No audio returned from Gemini Speech API.");
       }
     } catch (err: any) {
       const parsed = parseGeminiError(err);
       if (parsed.isDaily) {
-        setTestResult({
-          success: false,
-          message:
-            "Daily Quota Reached: This key reached Google AI Studio's free daily limit (RPD) for speech audio. Free tier quotas reset at midnight Pacific Time (PT). You can create a fresh free key at aistudio.google.com/apikey in 15 seconds to generate immediately.",
+        setFeedback({
+          type: "error",
+          message: `Key #${index + 1} Daily Limit Reached: This key reached its 10 requests/day allowance on Google's Free Tier (resets at midnight PT).`,
           rawError: parsed.rawError,
         });
       } else if (parsed.isQuota) {
-        setTestResult({
-          success: false,
-          message: `Rate Limited (429): Google's free rate limit reached (5 requests/min). Please wait ${parsed.retrySeconds}s for the slot to reset, or use another free key.`,
+        setFeedback({
+          type: "error",
+          message: `Key #${index + 1} Rate Limited (429): Google's free rate limit reached (5 requests/min). Please wait ${parsed.retrySeconds}s for the slot to reset.`,
           rawError: parsed.rawError,
         });
       } else {
-        setTestResult({
-          success: false,
-          message: parsed.message || "Failed to validate key. Please check for typos.",
+        setFeedback({
+          type: "error",
+          message: `Key #${index + 1} Error: ${parsed.message || "Failed to validate key."}`,
           rawError: parsed.rawError,
         });
       }
     } finally {
-      setIsTesting(false);
+      setTestingKeyIndex(null);
     }
+  };
+
+  const maskKey = (key: string, show: boolean) => {
+    if (show) return key;
+    if (key.length <= 10) return "••••••••••••";
+    return `${key.slice(0, 7)}••••••••${key.slice(-4)}`;
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
         {/* Header */}
         <div className="p-5 border-b border-neutral-800 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
-              <Key className="w-5 h-5" />
+              <Layers className="w-5 h-5" />
             </div>
             <div>
               <h3 className="text-base font-bold text-neutral-100 flex items-center gap-2">
-                <span>Google Gemini API Key</span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                  100% Free
+                <span>Multi-Key Pool & Rotation</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                  {keysList.length} Key{keysList.length === 1 ? "" : "s"} Connected
                 </span>
               </h3>
               <p className="text-xs text-neutral-400 mt-0.5">
-                Connect your key to generate realistic neural speech
+                Paste multiple free keys to bypass the 10/day limit with auto-failover
               </p>
             </div>
           </div>
@@ -204,76 +252,184 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
 
         {/* Scrollable Content */}
         <div className="p-5 space-y-4 overflow-y-auto">
-          {/* Step-by-Step Visitor Guide Card */}
-          <div className="bg-gradient-to-br from-indigo-950/40 via-neutral-900 to-purple-950/30 border border-indigo-500/30 rounded-xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
-                <HelpCircle className="w-4 h-4 text-indigo-400" />
-                How to get your free key (30 seconds)
-              </span>
-              <span className="text-[10px] font-medium text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/30">
-                No Credit Card Needed
-              </span>
+          {/* Capacity Banner */}
+          <div className="p-3.5 bg-gradient-to-r from-indigo-950/40 via-purple-950/30 to-neutral-900 border border-indigo-500/30 rounded-xl flex items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-300 shrink-0">
+                <Zap className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="font-semibold text-neutral-200 block">
+                  Combined Daily Allowance:{" "}
+                  <strong className="text-emerald-300 font-mono">
+                    ~{Math.max(1, keysList.length) * 10} Audio Clips / Day
+                  </strong>
+                </span>
+                <span className="text-[11px] text-neutral-400">
+                  Each free Google project gives 10 audio requests. Having {Math.max(1, keysList.length)} key{keysList.length === 1 ? "" : "s"} gives you ~{Math.max(1, keysList.length) * 10}/day.
+                </span>
+              </div>
             </div>
 
-            <ol className="text-xs text-neutral-300 space-y-2.5 pl-1">
-              <li className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
-                  1
-                </span>
-                <div>
-                  Click the button below to open{" "}
-                  <strong className="text-white">Google AI Studio</strong> in a new tab.
-                </div>
-              </li>
-              <li className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
-                  2
-                </span>
-                <div>
-                  Sign in with any Google account and click the blue{" "}
-                  <strong className="text-indigo-300">"+ Create API key"</strong> button.
-                </div>
-              </li>
-              <li className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
-                  3
-                </span>
-                <div>
-                  <strong className="text-white">Copy the key</strong>, come back here, and paste it into the field below.
-                </div>
-              </li>
-            </ol>
-
-            {/* Direct Link to Google AI Studio */}
-            <div className="pt-1">
-              <a
-                href="https://aistudio.google.com/apikey"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/25 transition-all cursor-pointer"
-              >
-                <span>Open Google AI Studio to Create Key</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-            </div>
+            <a
+              href="https://aistudio.google.com/apikey"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-2.5 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 font-medium text-[11px] flex items-center gap-1 shrink-0 transition-colors"
+            >
+              <span>+ Get More Keys</span>
+              <ExternalLink className="w-3 h-3 text-neutral-400" />
+            </a>
           </div>
 
-          {/* Privacy Note */}
-          <div className="text-xs text-neutral-400 bg-neutral-950/80 p-3 rounded-xl border border-neutral-800/80 flex items-start gap-2">
-            <Lock className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-            <div>
-              <strong className="text-neutral-200 block mb-0.5">100% Client-Side Private Storage</strong>
-              Your API key is saved solely inside your device's browser (<code className="text-indigo-300">localStorage</code>). It is never logged or shared with anyone.
+          {/* Auto-Rotation Toggle */}
+          <div className="flex items-center justify-between p-3 rounded-xl bg-neutral-950/70 border border-neutral-800 text-xs">
+            <div className="flex items-center gap-2">
+              <ArrowRightLeft className="w-4 h-4 text-indigo-400 shrink-0" />
+              <div>
+                <span className="font-semibold text-neutral-200 block">
+                  Auto-Failover / Key Rotation
+                </span>
+                <span className="text-[11px] text-neutral-400">
+                  When a key hits daily quota (10 requests) or rate limit, automatically switch to the next key.
+                </span>
+              </div>
             </div>
+
+            <label className="relative inline-flex items-center cursor-pointer ml-3 shrink-0">
+              <input
+                type="checkbox"
+                checked={autoRotate}
+                onChange={(e) => handleToggleAutoRotate(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-9 h-5 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+            </label>
           </div>
 
-          {/* Input Field */}
+          {/* Connected Keys Pool */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-semibold text-neutral-300">
-                Your Gemini API Key
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-bold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Key className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Your API Key Pool ({keysList.length})</span>
               </label>
+
+              {keysList.length > 1 && (
+                <button
+                  type="button"
+                  onClick={handleClearAll}
+                  className="text-[11px] text-red-400/80 hover:text-red-300 transition-colors cursor-pointer"
+                >
+                  Clear All Keys
+                </button>
+              )}
+            </div>
+
+            {keysList.length === 0 ? (
+              <div className="p-4 rounded-xl border border-dashed border-neutral-800 text-center space-y-1 bg-neutral-950/40">
+                <p className="text-xs text-neutral-400">
+                  No API keys saved yet. Paste one or more Gemini API keys below.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {keysList.map((k, idx) => {
+                  const isActive = k === activeKey;
+                  const isMasked = !showMaskedKeys[idx];
+                  const isTestingThis = testingKeyIndex === idx;
+
+                  return (
+                    <div
+                      key={idx}
+                      className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 transition-all ${
+                        isActive
+                          ? "bg-indigo-950/30 border-indigo-500/50 shadow-sm"
+                          : "bg-neutral-950/70 border-neutral-800/80"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="w-5 h-5 rounded-full bg-neutral-800 text-neutral-400 flex items-center justify-center text-[10px] font-mono shrink-0">
+                          {idx + 1}
+                        </span>
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs text-neutral-200 truncate">
+                              {maskKey(k, !isMasked)}
+                            </span>
+                            {isActive && (
+                              <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 shrink-0">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                Active
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setShowMaskedKeys((prev) => ({ ...prev, [idx]: !prev[idx] }))
+                          }
+                          className="p-1 rounded text-neutral-400 hover:text-neutral-200 transition-colors"
+                          title={isMasked ? "Show key" : "Hide key"}
+                        >
+                          {isMasked ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isTestingThis}
+                          onClick={() => handleTestKey(k, idx)}
+                          className="px-2 py-1 rounded text-[11px] font-medium bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 transition-colors disabled:opacity-50 cursor-pointer flex items-center gap-1"
+                          title="Test speech synthesis with this key"
+                        >
+                          {isTestingThis ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Sparkles className="w-3 h-3 text-indigo-400" />
+                          )}
+                          <span>Test</span>
+                        </button>
+
+                        {!isActive && (
+                          <button
+                            type="button"
+                            onClick={() => handleSetActive(k, idx)}
+                            className="px-2.5 py-1 rounded text-[11px] font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors cursor-pointer"
+                            title="Set as currently active key"
+                          >
+                            Use This Key
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveKey(k, idx)}
+                          className="p-1 rounded text-neutral-500 hover:text-red-400 transition-colors cursor-pointer"
+                          title="Delete this key"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Add Key(s) Box */}
+          <div className="p-3.5 bg-neutral-950/80 rounded-xl border border-neutral-800 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-neutral-200 flex items-center gap-1.5">
+                <Plus className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Add Key(s) to Pool</span>
+              </label>
+
               <button
                 type="button"
                 onClick={handlePasteFromClipboard}
@@ -281,98 +437,97 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
                 title="Paste from clipboard"
               >
                 <Clipboard className="w-3 h-3" />
-                <span>Paste Key</span>
+                <span>Paste from Clipboard</span>
               </button>
             </div>
-            <div className="relative">
-              <input
-                type={showKey ? "text" : "password"}
-                value={keyInput}
-                onChange={(e) => setKeyInput(e.target.value)}
-                placeholder="AIzaSy..."
-                className="w-full pl-3.5 pr-10 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-xs font-mono text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-indigo-500/80 transition-colors"
-              />
+
+            <textarea
+              rows={2}
+              value={newKeyInput}
+              onChange={(e) => setNewKeyInput(e.target.value)}
+              placeholder="Paste one or multiple Gemini API keys here (e.g. AIzaSy...)\nTip: You can paste multiple keys separated by new lines or commas!"
+              className="w-full p-2.5 bg-neutral-900 border border-neutral-800 rounded-lg text-xs font-mono text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-indigo-500/80 transition-colors resize-none"
+            />
+
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-[11px] text-neutral-400">
+                Pasting multiple keys combines them into an automated pool.
+              </span>
               <button
                 type="button"
-                onClick={() => setShowKey(!showKey)}
-                className="absolute right-2.5 top-2.5 text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer"
-                title={showKey ? "Hide key" : "Show key"}
+                onClick={handleAddKeys}
+                disabled={!newKeyInput.trim()}
+                className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5 shadow-sm shadow-indigo-600/30"
               >
-                {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add to Pool</span>
               </button>
             </div>
           </div>
 
-          {/* Test / Save Status Feedback */}
-          {testResult && (
+          {/* Feedback banner */}
+          {feedback && (
             <div
               className={`p-3 rounded-xl border text-xs flex flex-col gap-2 ${
-                testResult.success
+                feedback.type === "success"
                   ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
-                  : "bg-rose-500/10 border-rose-500/30 text-rose-300"
+                  : feedback.type === "error"
+                  ? "bg-rose-500/10 border-rose-500/30 text-rose-300"
+                  : "bg-indigo-500/10 border-indigo-500/30 text-indigo-300"
               }`}
             >
               <div className="flex items-start gap-2">
-                {testResult.success ? (
-                  <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-400 mt-0.5" />
-                ) : (
+                {feedback.type === "success" ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400 mt-0.5" />
+                ) : feedback.type === "error" ? (
                   <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
+                ) : (
+                  <ShieldCheck className="w-4 h-4 shrink-0 text-indigo-400 mt-0.5" />
                 )}
-                <span className="leading-relaxed">{testResult.message}</span>
+                <span className="leading-relaxed">{feedback.message}</span>
               </div>
-              {testResult.rawError && (
+              {feedback.rawError && (
                 <details className="mt-1 pt-1.5 border-t border-rose-500/20 text-[11px] font-mono opacity-80">
                   <summary className="cursor-pointer hover:underline text-rose-300 font-semibold select-none">
-                    View Raw API Error Message
+                    View Raw Error
                   </summary>
-                  <pre className="mt-1.5 p-2 bg-black/40 rounded-lg text-rose-200/90 whitespace-pre-wrap break-all text-[10px] max-h-32 overflow-y-auto">
-                    {testResult.rawError}
+                  <pre className="mt-1.5 p-2 bg-black/40 rounded-lg text-rose-200/90 whitespace-pre-wrap break-all text-[10px] max-h-24 overflow-y-auto">
+                    {feedback.rawError}
                   </pre>
                 </details>
               )}
             </div>
           )}
+
+          {/* Privacy Note */}
+          <div className="text-xs text-neutral-400 bg-neutral-950/60 p-3 rounded-xl border border-neutral-800/80 flex items-start gap-2">
+            <Lock className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+            <div>
+              <strong className="text-neutral-200 block mb-0.5">100% Client-Side Private Storage</strong>
+              All your keys are kept strictly inside your device's browser (<code className="text-indigo-300">localStorage</code>). They are never sent to external servers or logged.
+            </div>
+          </div>
         </div>
 
         {/* Footer actions */}
         <div className="p-4 bg-neutral-950/80 border-t border-neutral-800 flex items-center justify-between gap-2 shrink-0">
-          {savedKey ? (
-            <button
-              onClick={handleClear}
-              className="px-3 py-1.5 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Remove Key</span>
-            </button>
-          ) : (
-            <div />
-          )}
+          <a
+            href="https://aistudio.google.com/apikey"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium transition-colors"
+          >
+            <span>Create another free key in Google AI Studio</span>
+            <ExternalLink className="w-3 h-3" />
+          </a>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleTestKey}
-              disabled={isTesting || (!keyInput && !savedKey)}
-              className="px-3 py-2 text-xs font-semibold bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-xl transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
-            >
-              {isTesting ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-              )}
-              <span>Test Key</span>
-            </button>
-
-            <button
-              onClick={() => {
-                handleSave();
-                onClose();
-              }}
-              className="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-md shadow-indigo-600/30 transition-colors cursor-pointer flex items-center gap-1.5"
-            >
-              <Check className="w-3.5 h-3.5" />
-              <span>Save & Connect</span>
-            </button>
-          </div>
+          <button
+            onClick={onClose}
+            className="px-5 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-md shadow-indigo-600/30 transition-colors cursor-pointer flex items-center gap-1.5"
+          >
+            <Check className="w-3.5 h-3.5" />
+            <span>Done</span>
+          </button>
         </div>
       </div>
     </div>

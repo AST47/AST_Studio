@@ -220,7 +220,7 @@ export async function fitAudioToTargetDuration(
     const newLength = stretchedChannels[0].length;
     const newBuffer = ctx.createBuffer(numChannels, newLength, sampleRate);
     for (let c = 0; c < numChannels; c++) {
-      newBuffer.copyToChannel(stretchedChannels[c], c);
+      newBuffer.getChannelData(c).set(stretchedChannels[c]);
     }
 
     const wavBytes = encodeAudioBufferToWav(newBuffer);

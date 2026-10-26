@@ -3,10 +3,14 @@ import {
   generateClientSpeech,
   enhanceClientScript,
   getStoredApiKey,
+  getStoredApiKeys,
+  isAutoRotateEnabled,
+  rotateToNextApiKey,
 } from "./clientGeminiService";
 import {
   recordRequest,
   recordQuotaExceeded,
+  clearQuotaCooldown,
   getQuotaStatus,
   parseGeminiError,
   subscribeToQuota,
@@ -92,50 +96,42 @@ export async function requestTts(
 
     const contentType = response.headers.get("content-type") || "";
 
-    // If 404 on static host (like GitHub Pages where /api/tts doesn't exist), try client fallback
+    // If 404 on static host (like GitHub Pages where /api/tts doesn't exist), try client fallback with multi-key failover
     if (response.status === 404 || !contentType.includes("application/json")) {
-      try {
-        const clientRes = await generateClientSpeech(params as any);
-        recordRequest();
-        return {
-          ...clientRes,
-          quotaStatus: getQuotaStatus(),
-        };
-      } catch (clientErr: any) {
-        if (clientErr.message === "NO_API_KEY") {
-          throw new ApiError(
-            "API_KEY_REQUIRED",
-            false,
-            "Please click the 'API Key' button in the top bar to connect your Google Gemini API key for this static site."
-          );
-        }
-        const parsed = parseGeminiError(clientErr);
-        if (parsed.isQuota) {
-          recordQuotaExceeded(parsed.retrySeconds, parsed.isDaily);
-        }
-        throw new ApiError(
-          parsed.message,
-          parsed.isQuota,
-          parsed.details,
-          parsed.retrySeconds,
-          parsed.isDaily,
-          parsed.rawError
-        );
-      }
-    }
+      const allKeys = getStoredApiKeys();
+      const maxAttempts = isAutoRotateEnabled() && allKeys.length > 1 ? allKeys.length : 1;
 
-    if (!response.ok) {
-      // If server returned 429 and user has client key configured, try direct client call
-      if (hasClientKey && response.status === 429) {
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
           const clientRes = await generateClientSpeech(params as any);
           recordRequest();
+          clearQuotaCooldown();
           return {
             ...clientRes,
             quotaStatus: getQuotaStatus(),
           };
         } catch (clientErr: any) {
+          if (clientErr.message === "NO_API_KEY") {
+            throw new ApiError(
+              "API_KEY_REQUIRED",
+              false,
+              "Please click the 'API Key' button in the top bar to connect your Google Gemini API key for this static site."
+            );
+          }
           const parsed = parseGeminiError(clientErr);
+
+          // If quota hit and multiple keys exist and auto-rotate enabled, switch key and retry!
+          if ((parsed.isQuota || parsed.isDaily) && isAutoRotateEnabled() && attempt < maxAttempts - 1) {
+            const rotated = rotateToNextApiKey();
+            if (rotated) {
+              console.log(
+                `[AST Studio] Auto-rotated to Key #${rotated.index} of ${rotated.total} (previous key reached limit). Retrying...`
+              );
+              clearQuotaCooldown();
+              continue;
+            }
+          }
+
           if (parsed.isQuota) {
             recordQuotaExceeded(parsed.retrySeconds, parsed.isDaily);
           }
@@ -147,6 +143,49 @@ export async function requestTts(
             parsed.isDaily,
             parsed.rawError
           );
+        }
+      }
+    }
+
+    if (!response.ok) {
+      // If server returned 429 and user has client key configured, try direct client call with failover
+      if (hasClientKey && response.status === 429) {
+        const allKeys = getStoredApiKeys();
+        const maxAttempts = isAutoRotateEnabled() && allKeys.length > 1 ? allKeys.length : 1;
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          try {
+            const clientRes = await generateClientSpeech(params as any);
+            recordRequest();
+            clearQuotaCooldown();
+            return {
+              ...clientRes,
+              quotaStatus: getQuotaStatus(),
+            };
+          } catch (clientErr: any) {
+            const parsed = parseGeminiError(clientErr);
+            if ((parsed.isQuota || parsed.isDaily) && isAutoRotateEnabled() && attempt < maxAttempts - 1) {
+              const rotated = rotateToNextApiKey();
+              if (rotated) {
+                console.log(
+                  `[AST Studio] Auto-rotated to Key #${rotated.index} of ${rotated.total}. Retrying...`
+                );
+                clearQuotaCooldown();
+                continue;
+              }
+            }
+            if (parsed.isQuota) {
+              recordQuotaExceeded(parsed.retrySeconds, parsed.isDaily);
+            }
+            throw new ApiError(
+              parsed.message,
+              parsed.isQuota,
+              parsed.details,
+              parsed.retrySeconds,
+              parsed.isDaily,
+              parsed.rawError
+            );
+          }
         }
       }
 

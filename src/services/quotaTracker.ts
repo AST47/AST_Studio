@@ -3,13 +3,18 @@ import { getStoredApiKey } from "./clientGeminiService";
 
 const STORAGE_TIMESTAMPS_KEY = "ast_studio_quota_timestamps_v1";
 const STORAGE_COOLDOWN_KEY = "ast_studio_quota_cooldown_v1";
-const STORAGE_GENERATIONS_COUNT_KEY = "ast_studio_generations_count_v1";
+const STORAGE_TODAY_DATE_KEY = "ast_studio_today_date_v2";
+const STORAGE_TODAY_COUNT_KEY = "ast_studio_today_count_v2";
 const STORAGE_DAILY_EXCEEDED_KEY = "ast_studio_daily_quota_exceeded_v1";
 
 const FREE_TIER_RPM_LIMIT = 5; // Standard Gemini TTS Free tier rate limit is 5 RPM
 
 type QuotaSubscriber = (status: QuotaStatus) => void;
 const subscribers = new Set<QuotaSubscriber>();
+
+function getTodayDateStr(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 function getStoredTimestamps(): number[] {
   try {
@@ -58,7 +63,6 @@ function setCooldownUntil(until: number) {
 
 export function subscribeToQuota(callback: QuotaSubscriber): () => void {
   subscribers.add(callback);
-  // Send initial state immediately
   callback(getQuotaStatus());
   return () => {
     subscribers.delete(callback);
@@ -76,11 +80,55 @@ export function notifySubscribers() {
   });
 }
 
-// Immediate self-heal: purge legacy daily-exceeded lock from browser storage on load
+// Immediate self-heal on load: purge legacy counters and locks
 if (typeof window !== "undefined") {
   try {
+    // Purge old cumulative count (which showed 141)
+    localStorage.removeItem("ast_studio_generations_count_v1");
     localStorage.removeItem(STORAGE_DAILY_EXCEEDED_KEY);
   } catch {}
+}
+
+export function getTodayGenerationsCount(): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    const todayStr = getTodayDateStr();
+    const storedDate = localStorage.getItem(STORAGE_TODAY_DATE_KEY);
+    if (storedDate !== todayStr) {
+      // New day: reset today's counter to 0
+      localStorage.setItem(STORAGE_TODAY_DATE_KEY, todayStr);
+      localStorage.setItem(STORAGE_TODAY_COUNT_KEY, "0");
+      return 0;
+    }
+    const raw = localStorage.getItem(STORAGE_TODAY_COUNT_KEY);
+    return raw ? parseInt(raw, 10) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function incrementTodayGenerationsCount(): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    const todayStr = getTodayDateStr();
+    const count = getTodayGenerationsCount() + 1;
+    localStorage.setItem(STORAGE_TODAY_DATE_KEY, todayStr);
+    localStorage.setItem(STORAGE_TODAY_COUNT_KEY, String(count));
+    return count;
+  } catch {
+    return 1;
+  }
+}
+
+export function resetGenerationsCount(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const todayStr = getTodayDateStr();
+    localStorage.setItem(STORAGE_TODAY_DATE_KEY, todayStr);
+    localStorage.setItem(STORAGE_TODAY_COUNT_KEY, "0");
+    localStorage.removeItem("ast_studio_generations_count_v1");
+  } catch {}
+  notifySubscribers();
 }
 
 /**
@@ -92,11 +140,8 @@ export function recordRequest(): QuotaStatus {
   current.push(now);
   saveTimestamps(current);
 
-  // Increment total session generations counter
-  try {
-    const count = parseInt(localStorage.getItem(STORAGE_GENERATIONS_COUNT_KEY) || "0", 10) + 1;
-    localStorage.setItem(STORAGE_GENERATIONS_COUNT_KEY, String(count));
-  } catch {}
+  // Increment today's count
+  incrementTodayGenerationsCount();
 
   const status = getQuotaStatus();
   notifySubscribers();
@@ -108,8 +153,8 @@ export function recordRequest(): QuotaStatus {
  */
 export function recordQuotaExceeded(retrySeconds = 20, isDaily = false): QuotaStatus {
   const now = Date.now();
-  // Never lock out longer than 30s
-  const safeCooldown = Math.min(30, Math.max(5, retrySeconds));
+  // Allow cooldown up to 300s (5 minutes) if Google specifies a delay, min 5s
+  const safeCooldown = Math.max(5, Math.min(300, retrySeconds));
   const cooldownUntil = now + safeCooldown * 1000;
   setCooldownUntil(cooldownUntil);
 
@@ -149,14 +194,7 @@ export function getQuotaStatus(): QuotaStatus {
   const requestsInLastMinute = timestamps.length;
   const isThrottled = cooldownRemaining > 0;
   const hasApiKey = !!getStoredApiKey();
-
-  let sessionGenerationsCount = 0;
-  try {
-    sessionGenerationsCount = parseInt(
-      localStorage.getItem(STORAGE_GENERATIONS_COUNT_KEY) || "0",
-      10
-    );
-  } catch {}
+  const sessionGenerationsCount = getTodayGenerationsCount();
 
   return {
     requestsInLastMinute,
@@ -193,62 +231,78 @@ export function parseGeminiError(err: any): {
     lower.includes("exhausted") ||
     lower.includes("too many requests");
 
-  // Classify as daily quota exhaustion ONLY when explicitly mentioning daily limits or RPD:
-  const isDaily =
+  let retrySeconds = 30;
+  let parsedExactDelay = false;
+
+  // 1. Check error details array for RetryInfo or delay
+  const detailArrays = [err?.details, err?.error?.details];
+  for (const arr of detailArrays) {
+    if (Array.isArray(arr)) {
+      for (const d of arr) {
+        if (d?.retryDelay) {
+          const parsed = parseInt(String(d.retryDelay).replace(/[^0-9]/g, ""), 10);
+          if (!isNaN(parsed) && parsed > 0) {
+            retrySeconds = parsed;
+            parsedExactDelay = true;
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Check "retry in XmYs" (minutes and seconds) e.g. "retry in 2m31.125s"
+  const minSecMatch = rawError.match(/retry in\s*(\d+)m\s*([\d.]+)s/i);
+  if (minSecMatch) {
+    const s = parseInt(minSecMatch[1], 10) * 60 + Math.ceil(parseFloat(minSecMatch[2]));
+    if (!isNaN(s) && s > 0) {
+      retrySeconds = s;
+      parsedExactDelay = true;
+    }
+  } else {
+    const secMatch = rawError.match(/retry in\s*([\d.]+)s/i);
+    if (secMatch) {
+      const s = Math.ceil(parseFloat(secMatch[1]));
+      if (!isNaN(s) && s > 0) {
+        retrySeconds = s;
+        parsedExactDelay = true;
+      }
+    }
+  }
+
+  const hasDailyWords =
     lower.includes("per day") ||
     lower.includes("per_day") ||
     lower.includes("requests_per_day") ||
     lower.includes("daily quota") ||
-    lower.includes("daily limit") ||
-    lower.includes("day limit") ||
-    lower.includes("rpd") ||
-    (lower.includes("quota exceeded") && (lower.includes("day") || lower.includes("24 hour")));
+    lower.includes("daily limit");
 
-  // Check error details array for RetryInfo or delay
-  let retrySeconds = 30;
-  if (Array.isArray(err?.details)) {
-    for (const d of err.details) {
-      if (d?.retryDelay) {
-        const parsed = parseInt(String(d.retryDelay).replace(/[^0-9]/g, ""), 10);
-        if (!isNaN(parsed) && parsed > 0) retrySeconds = parsed;
-      }
-    }
-  }
-  if (Array.isArray(err?.error?.details)) {
-    for (const d of err.error.details) {
-      if (d?.retryDelay) {
-        const parsed = parseInt(String(d.retryDelay).replace(/[^0-9]/g, ""), 10);
-        if (!isNaN(parsed) && parsed > 0) retrySeconds = parsed;
-      }
-    }
-  }
-
-  const matchSeconds = lower.match(/(?:retry in|retry after|wait)\s*([0-9.]+)\s*(?:s|sec|second)?/i);
-  if (matchSeconds && matchSeconds[1]) {
-    const s = Math.ceil(parseFloat(matchSeconds[1]));
-    if (!isNaN(s) && s > 0 && s <= 300) retrySeconds = s;
-  } else if (lower.match(/(\d+)\s*second/)) {
-    const s = parseInt(lower.match(/(\d+)\s*second/)![1], 10);
-    if (s > 0 && s <= 300) retrySeconds = s;
-  }
+  // If Google provides a retry window under 10 minutes (like 2m31s), treat it as a temporary rate limit cooldown with live countdown!
+  const isDaily = hasDailyWords && (!parsedExactDelay || retrySeconds > 600);
 
   let friendlyDetails = "";
   if (isDaily) {
     friendlyDetails =
-      "Your Google Gemini API key has reached its free-tier Daily Quota (RPD) for today. Google AI Studio resets free quotas daily at midnight Pacific Time (PT). You can switch to another free Gemini API key in the top bar to continue generating immediately.";
+      "Your Google Gemini API key has reached its free-tier Daily Quota (limit: 10 requests/day on preview models). Google AI Studio resets free quotas daily at midnight Pacific Time (PT). You can switch to another free Gemini API key to continue generating immediately.";
   } else if (isQuota) {
-    friendlyDetails =
-      `Your Google Gemini API key reached the free-tier Rate Limit (5 requests per minute). This is a standard Google AI Studio quota policy. Please wait ${retrySeconds} seconds for the quota slot to reset.`;
+    if (parsedExactDelay && retrySeconds > 60) {
+      const mins = Math.floor(retrySeconds / 60);
+      const secs = retrySeconds % 60;
+      friendlyDetails = `Google's free-tier rate limit was reached (limit: 10 requests per bucket). Google has scheduled your slot to reopen in ${mins}m ${secs}s. You can wait for the live countdown, click 'Clear Cooldown' to retry, or switch to another free Gemini API key now.`;
+    } else {
+      friendlyDetails = `Your Google Gemini API key reached the free-tier Rate Limit (5 requests per minute). Please wait ${retrySeconds} seconds for the quota slot to reset, or switch to another free key.`;
+    }
   }
 
   return {
     isQuota,
     isDaily,
-    retrySeconds: Math.min(30, retrySeconds),
+    retrySeconds: Math.max(5, Math.min(300, retrySeconds)),
     message: isDaily
-      ? "Google Gemini Daily Quota Limit Reached"
+      ? "Google Gemini Daily Quota Limit (10/Day Reached)"
       : isQuota
-      ? "Gemini API Quota / Rate Limit Reached"
+      ? parsedExactDelay && retrySeconds > 60
+        ? `Rate Limit Reached (Retry in ${Math.ceil(retrySeconds / 60)} min)`
+        : "Gemini API Rate Limit Reached"
       : rawError,
     details: friendlyDetails || rawError,
     rawError,
@@ -259,7 +313,6 @@ export function parseGeminiError(err: any): {
 if (typeof window !== "undefined") {
   setInterval(() => {
     const status = getQuotaStatus();
-    // Only notify if there are active countdowns to avoid redundant re-renders
     if (status.cooldownRemaining > 0 || status.secondsUntilNextWindowSlot > 0 || status.requestsInLastMinute > 0) {
       notifySubscribers();
     }
