@@ -117,4 +117,17 @@ export interface QuotaStatus {
   timestamp?: string;
 }
 
+export interface SavedVoiceProfile {
+  id: string;
+  customName: string;
+  voiceId: VoiceName;
+  stylePrompt: string;
+  speakingPace: "normal" | "slow" | "brisk" | "fast";
+  vocalMood: string;
+  model: "gemini-3.8-flash-lite-tts" | "gemini-3.8-flash-tts";
+  createdAt: number;
+  updatedAt: number;
+  isBuiltIn?: boolean;
+}
+
 

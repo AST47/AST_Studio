@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from "react";
+import React, { useState, useRef, useMemo, useEffect } from "react";
 import {
   Mic,
   Sparkles,
@@ -31,13 +31,22 @@ import {
   Unlock,
   Pause,
   Clock3,
+  Bookmark,
+  Save,
+  Star,
+  Plus,
+  Trash2,
+  FileText,
 } from "lucide-react";
-import { VoiceName, GeneratedAudioItem, QuotaStatus, SupportedLanguage } from "../types/tts";
+import { VoiceName, GeneratedAudioItem, QuotaStatus, SupportedLanguage, SavedVoiceProfile } from "../types/tts";
 import { VOICES_CATALOG, PRESET_STYLES, SCRIPT_TEMPLATES } from "../data/voices";
 import { LANGUAGES, detectLanguageFromText } from "../data/languages";
 import { requestTts, requestScriptEnhance } from "../services/api";
 import { recordQuotaExceeded, clearQuotaCooldown } from "../services/quotaTracker";
 import { verbalizeTextForLanguage } from "../services/clientLangUtils";
+import { getSavedVoices, subscribeToSavedVoices } from "../services/savedVoicesService";
+import { SaveVoiceModal } from "./SaveVoiceModal";
+import { SavedVoicesModal } from "./SavedVoicesModal";
 import {
   parseScriptPauseSegments,
   hasSilenceTags,
@@ -79,12 +88,46 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
   >("gemini-3.8-flash-lite-tts");
 
   const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguage>("auto");
-  const [voiceFilterTab, setVoiceFilterTab] = useState<"all" | "official" | "kids" | "character">("all");
+  const [voiceFilterTab, setVoiceFilterTab] = useState<"all" | "official" | "kids" | "character" | "saved">("all");
   const [voiceSearchQuery, setVoiceSearchQuery] = useState("");
   const [isVoicePickerExpanded, setIsVoicePickerExpanded] = useState(false);
   const [auditionLoading, setAuditionLoading] = useState(false);
   const [speakingPace, setSpeakingPace] = useState<"normal" | "slow" | "brisk" | "fast">("normal");
   const [vocalMood, setVocalMood] = useState<string>("default");
+
+  // Custom Saved Voices Library State
+  const [savedVoices, setSavedVoices] = useState<SavedVoiceProfile[]>(() => getSavedVoices());
+  const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
+  const [showSaveVoiceModal, setShowSaveVoiceModal] = useState<boolean>(false);
+  const [showSavedVoicesModal, setShowSavedVoicesModal] = useState<boolean>(false);
+  const [showSavedVoicesDropdown, setShowSavedVoicesDropdown] = useState<boolean>(false);
+  const [savedVoiceNotification, setSavedVoiceNotification] = useState<string | null>(null);
+
+  // Subscribe to persistent storage updates
+  useEffect(() => {
+    setSavedVoices(getSavedVoices());
+    const unsub = subscribeToSavedVoices((updated) => setSavedVoices(updated));
+    return () => unsub();
+  }, []);
+
+  const activeSavedProfile = useMemo(() => {
+    if (!activeProfileId) return null;
+    return savedVoices.find((p) => p.id === activeProfileId) || null;
+  }, [activeProfileId, savedVoices]);
+
+  const handleApplyVoiceProfile = (profile: SavedVoiceProfile) => {
+    onSelectVoice(profile.voiceId);
+    setStylePrompt(profile.stylePrompt || "");
+    setSpeakingPace(profile.speakingPace || "normal");
+    setVocalMood(profile.vocalMood || "default");
+    if (profile.model) {
+      setSelectedModel(profile.model);
+    }
+    setActiveProfileId(profile.id);
+    setShowSavedVoicesDropdown(false);
+    setSavedVoiceNotification(`Loaded "${profile.customName}"!`);
+    setTimeout(() => setSavedVoiceNotification(null), 4000);
+  };
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStepText, setGenerationStepText] = useState<string>("");
@@ -133,6 +176,19 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
       return true;
     });
   }, [voiceFilterTab, voiceSearchQuery]);
+
+  // Filtered custom saved voice profiles
+  const filteredSavedVoices = useMemo(() => {
+    return savedVoices.filter((p) => {
+      if (!voiceSearchQuery.trim()) return true;
+      const q = voiceSearchQuery.toLowerCase();
+      return (
+        p.customName.toLowerCase().includes(q) ||
+        p.voiceId.toLowerCase().includes(q) ||
+        p.stylePrompt.toLowerCase().includes(q)
+      );
+    });
+  }, [savedVoices, voiceSearchQuery]);
 
   // Dynamic language detection
   const detectedLanguage = useMemo(() => detectLanguageFromText(scriptText), [scriptText]);
@@ -413,49 +469,128 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
     <div className="space-y-6">
       {/* Voice Selection & Studio Control Center */}
       <div className="bg-neutral-900/80 border border-neutral-800 rounded-2xl p-4 sm:p-5 space-y-4">
-        {/* Header with Title and Model Switcher */}
+        {/* Header with Title, Saved Voices Quick Menu, and Model Switcher */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-2">
                 <Mic className="w-4 h-4 text-indigo-400" />
-                1. Speaker Voice & Delivery Controls
+                1. Speaker Voice & Delivery Direction
               </h3>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
-                {VOICES_CATALOG.length} Choices
+                {VOICES_CATALOG.length} Base Voices
               </span>
             </div>
             <p className="text-xs text-neutral-400 mt-0.5">
-              Choose from all 30 Google Gemini studio voices, 8 child personas, or 8 dramatic archetypes.
+              Select a speaker voice, direct their style & mood, and save custom directed voices with names of your choosing.
             </p>
           </div>
 
-          {/* Model Switcher */}
-          <div className="flex items-center gap-1.5 bg-neutral-950 p-1 rounded-xl border border-neutral-800 self-start sm:self-auto">
-            <button
-              onClick={() => setSelectedModel("gemini-3.8-flash-lite-tts")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
-                selectedModel === "gemini-3.8-flash-lite-tts"
-                  ? "bg-indigo-600 text-white shadow-sm"
-                  : "text-neutral-400 hover:text-neutral-200"
-              }`}
-              title="Ultra-fast standard speech model (free tier high efficiency)"
-            >
-              <Zap className="w-3 h-3 text-amber-300" />
-              <span>Flash-Lite TTS</span>
-            </button>
-            <button
-              onClick={() => setSelectedModel("gemini-3.8-flash-tts")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
-                selectedModel === "gemini-3.8-flash-tts"
-                  ? "bg-indigo-600 text-white shadow-sm"
-                  : "text-neutral-400 hover:text-neutral-200"
-              }`}
-              title="Flagship studio model supporting vocal bursts (<breath>, <laugh>) and custom personas"
-            >
-              <Flame className="w-3 h-3 text-orange-400" />
-              <span>Flash TTS (Studio)</span>
-            </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Quick Saved Voices Dropdown */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowSavedVoicesDropdown(!showSavedVoicesDropdown)}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-neutral-950 hover:bg-neutral-800 text-amber-300 border border-amber-500/30 flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Load a saved voice profile"
+              >
+                <Star className="w-3.5 h-3.5 fill-amber-400/20 text-amber-400" />
+                <span>Saved Voices ({savedVoices.length})</span>
+                <ChevronDown className={`w-3 h-3 transition-transform ${showSavedVoicesDropdown ? "rotate-180" : ""}`} />
+              </button>
+
+              {showSavedVoicesDropdown && (
+                <div className="absolute right-0 top-9 z-30 w-72 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl p-2 space-y-1">
+                  <div className="flex items-center justify-between px-2 py-1 text-[11px] font-bold text-neutral-400 uppercase tracking-wider border-b border-neutral-800">
+                    <span>Saved Voice Library</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowSavedVoicesDropdown(false);
+                        setShowSaveVoiceModal(true);
+                      }}
+                      className="text-amber-400 hover:text-amber-300 flex items-center gap-1 font-semibold normal-case cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" /> Save Current
+                    </button>
+                  </div>
+
+                  <div className="max-h-60 overflow-y-auto space-y-1 pt-1">
+                    {savedVoices.map((profile) => {
+                      const baseVoice = VOICES_CATALOG.find((v) => v.id === profile.voiceId);
+                      const isActive = activeProfileId === profile.id;
+                      return (
+                        <button
+                          key={profile.id}
+                          type="button"
+                          onClick={() => handleApplyVoiceProfile(profile)}
+                          className={`w-full text-left p-2 rounded-lg transition-all text-xs cursor-pointer flex items-center justify-between ${
+                            isActive
+                              ? "bg-amber-500/20 border border-amber-500/50 text-white"
+                              : "hover:bg-neutral-800/90 text-neutral-200"
+                          }`}
+                        >
+                          <div className="min-w-0 pr-2">
+                            <div className="font-bold flex items-center gap-1.5 text-neutral-100">
+                              <span>{baseVoice?.avatarEmoji || "🎙️"}</span>
+                              <span className="truncate">{profile.customName}</span>
+                            </div>
+                            <div className="text-[10px] text-neutral-400 truncate">
+                              Base: {baseVoice?.name || profile.voiceId} • {profile.vocalMood === "default" ? "Natural" : "Directed Mood"}
+                            </div>
+                          </div>
+                          {isActive && (
+                            <span className="text-[10px] font-mono text-emerald-400 font-bold shrink-0">ACTIVE</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="border-t border-neutral-800 pt-1 flex items-center justify-between px-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowSavedVoicesDropdown(false);
+                        setShowSavedVoicesModal(true);
+                      }}
+                      className="w-full py-1.5 text-center text-[11px] font-semibold text-neutral-300 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer"
+                    >
+                      Browse All Voices Library →
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Model Switcher */}
+            <div className="flex items-center gap-1.5 bg-neutral-950 p-1 rounded-xl border border-neutral-800">
+              <button
+                onClick={() => setSelectedModel("gemini-3.8-flash-lite-tts")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
+                  selectedModel === "gemini-3.8-flash-lite-tts"
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "text-neutral-400 hover:text-neutral-200"
+                }`}
+                title="Ultra-fast standard speech model (free tier high efficiency)"
+              >
+                <Zap className="w-3 h-3 text-amber-300" />
+                <span>Flash-Lite TTS</span>
+              </button>
+              <button
+                onClick={() => setSelectedModel("gemini-3.8-flash-tts")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
+                  selectedModel === "gemini-3.8-flash-tts"
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "text-neutral-400 hover:text-neutral-200"
+                }`}
+                title="Flagship studio model supporting vocal bursts (<breath>, <laugh>) and custom personas"
+              >
+                <Flame className="w-3 h-3 text-orange-400" />
+                <span>Flash TTS (Studio)</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -467,7 +602,14 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
             </div>
             <div className="space-y-1 min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-base font-extrabold text-white">{currentVoiceInfo.name}</span>
+                <span className="text-base font-extrabold text-white">
+                  {activeSavedProfile ? activeSavedProfile.customName : currentVoiceInfo.name}
+                </span>
+                {activeSavedProfile && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                    <Star className="w-2.5 h-2.5 fill-amber-400" /> Custom Saved Voice
+                  </span>
+                )}
                 {currentVoiceInfo.category === "kids" ? (
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase">
                     👦👧 {currentVoiceInfo.ageGroup}
@@ -481,16 +623,20 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
                     🎙️ Google Studio HD ({currentVoiceInfo.gender})
                   </span>
                 )}
-                <span className="text-xs text-indigo-300 font-medium">• {currentVoiceInfo.tone}</span>
+                <span className="text-xs text-indigo-300 font-medium">
+                  {activeSavedProfile ? `Base: ${currentVoiceInfo.name}` : `• ${currentVoiceInfo.tone}`}
+                </span>
               </div>
               <p className="text-xs text-neutral-400 leading-relaxed max-w-2xl line-clamp-2">
-                {currentVoiceInfo.description}
+                {activeSavedProfile && stylePrompt
+                  ? `Directed Style: "${stylePrompt}"`
+                  : currentVoiceInfo.description}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 shrink-0 self-start md:self-center">
-            {/* Audition Button */}
+            {/* Audition Button with active directed style */}
             <button
               type="button"
               onClick={async () => {
@@ -501,8 +647,8 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
                     mode: "single",
                     text: currentVoiceInfo.sampleText,
                     voice: currentVoiceInfo.id,
-                    style: currentVoiceInfo.stylePrompt,
-                    model: currentVoiceInfo.category === "kids" || currentVoiceInfo.category === "character" ? "gemini-3.8-flash-tts" : "gemini-3.8-flash-lite-tts",
+                    style: stylePrompt.trim() ? stylePrompt : currentVoiceInfo.stylePrompt,
+                    model: selectedModel,
                   });
                   const audio = new Audio(`data:audio/wav;base64,${res.audioBase64}`);
                   await audio.play();
@@ -514,7 +660,7 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
               }}
               disabled={auditionLoading}
               className="px-3 py-2 rounded-xl text-xs font-semibold bg-neutral-900 hover:bg-neutral-800 text-neutral-200 border border-neutral-700 flex items-center gap-1.5 transition-colors cursor-pointer"
-              title="Audition a sample phrase with this voice"
+              title="Audition directed voice with a sample phrase"
             >
               {auditionLoading ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -549,6 +695,7 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
               <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
                 {[
                   { id: "all", label: `All (${VOICES_CATALOG.length})` },
+                  { id: "saved", label: `⭐ Saved Profiles (${savedVoices.length})` },
                   { id: "official", label: `🎙️ Studio HD (${VOICES_CATALOG.filter((v) => v.category === "official").length})` },
                   { id: "kids", label: `👦👧 Kids (${VOICES_CATALOG.filter((v) => v.category === "kids").length})` },
                   { id: "character", label: `🎭 Characters (${VOICES_CATALOG.filter((v) => v.category === "character").length})` },
@@ -573,7 +720,7 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
                   type="text"
                   value={voiceSearchQuery}
                   onChange={(e) => setVoiceSearchQuery(e.target.value)}
-                  placeholder="Filter voices..."
+                  placeholder={voiceFilterTab === "saved" ? "Search saved voices..." : "Filter voices..."}
                   className="w-full pl-8 pr-7 py-1.5 bg-neutral-900 border border-neutral-800 rounded-lg text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-indigo-500"
                 />
                 {voiceSearchQuery && (
@@ -589,114 +736,301 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
 
             {/* Voices Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 max-h-72 overflow-y-auto p-1">
-              {filteredVoicesForStudio.map((v) => {
-                const isSelected = selectedVoice === v.id;
-                const isKid = v.category === "kids";
-                const isCharacter = v.category === "character";
+              {voiceFilterTab === "saved" ? (
+                filteredSavedVoices.length === 0 ? (
+                  <div className="col-span-full py-8 text-center text-xs text-neutral-400 space-y-2">
+                    <p>No saved voice profiles matching "{voiceSearchQuery}".</p>
+                    <button
+                      type="button"
+                      onClick={() => setShowSaveVoiceModal(true)}
+                      className="px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 font-semibold cursor-pointer"
+                    >
+                      + Save Current Settings as Voice Profile
+                    </button>
+                  </div>
+                ) : (
+                  filteredSavedVoices.map((profile) => {
+                    const baseVoice = VOICES_CATALOG.find((v) => v.id === profile.voiceId);
+                    const isSelected = activeProfileId === profile.id;
 
-                return (
-                  <button
-                    key={v.id}
-                    onClick={() => {
-                      onSelectVoice(v.id);
-                      if (isKid || isCharacter) {
-                        setSelectedModel("gemini-3.8-flash-tts");
-                      }
-                    }}
-                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer relative flex flex-col justify-between ${
-                      isSelected
-                        ? isKid
-                          ? "bg-amber-950/40 border-amber-500 shadow-md ring-1 ring-amber-500"
-                          : isCharacter
-                          ? "bg-purple-950/40 border-purple-500 shadow-md ring-1 ring-purple-500"
-                          : "bg-indigo-950/40 border-indigo-500 shadow-md ring-1 ring-indigo-500"
-                        : "bg-neutral-900/70 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-800/80"
-                    }`}
-                  >
-                    {isSelected && (
-                      <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                    )}
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <span className="text-lg select-none">{v.avatarEmoji}</span>
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold text-neutral-100 truncate">{v.name}</div>
-                        <div className="text-[10px] text-neutral-400 font-mono">
-                          {isKid ? v.gender === "boy" ? "Boy" : "Girl" : v.gender}
+                    return (
+                      <button
+                        key={profile.id}
+                        onClick={() => handleApplyVoiceProfile(profile)}
+                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer relative flex flex-col justify-between ${
+                          isSelected
+                            ? "bg-amber-950/40 border-amber-500 shadow-md ring-1 ring-amber-500"
+                            : "bg-neutral-900/70 border-neutral-800 hover:border-amber-500/50 hover:bg-neutral-800/80"
+                        }`}
+                      >
+                        {isSelected && (
+                          <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                        )}
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className="text-lg select-none">{baseVoice?.avatarEmoji || "🎙️"}</span>
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-neutral-100 truncate">{profile.customName}</div>
+                            <div className="text-[10px] text-amber-300 font-mono truncate">
+                              Base: {baseVoice?.name || profile.voiceId}
+                            </div>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-neutral-400 line-clamp-1">
+                          {profile.stylePrompt || "Natural delivery"}
+                        </p>
+                      </button>
+                    );
+                  })
+                )
+              ) : (
+                filteredVoicesForStudio.map((v) => {
+                  const isSelected = selectedVoice === v.id;
+                  const isKid = v.category === "kids";
+                  const isCharacter = v.category === "character";
+
+                  return (
+                    <button
+                      key={v.id}
+                      onClick={() => {
+                        onSelectVoice(v.id);
+                        if (isKid || isCharacter) {
+                          setSelectedModel("gemini-3.8-flash-tts");
+                        }
+                      }}
+                      className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer relative flex flex-col justify-between ${
+                        isSelected
+                          ? isKid
+                            ? "bg-amber-950/40 border-amber-500 shadow-md ring-1 ring-amber-500"
+                            : isCharacter
+                            ? "bg-purple-950/40 border-purple-500 shadow-md ring-1 ring-purple-500"
+                            : "bg-indigo-950/40 border-indigo-500 shadow-md ring-1 ring-indigo-500"
+                          : "bg-neutral-900/70 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-800/80"
+                      }`}
+                    >
+                      {isSelected && (
+                        <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                      )}
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span className="text-lg select-none">{v.avatarEmoji}</span>
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-neutral-100 truncate">{v.name}</div>
+                          <div className="text-[10px] text-neutral-400 font-mono">
+                            {isKid ? (v.gender === "boy" ? "Boy" : "Girl") : v.gender}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <p className="text-[10px] text-neutral-400 line-clamp-1">{v.tone}</p>
-                  </button>
-                );
-              })}
+                      <p className="text-[10px] text-neutral-400 line-clamp-1">{v.tone}</p>
+                    </button>
+                  );
+                })
+              )}
             </div>
           </div>
         )}
 
-        {/* Advanced Voice Delivery Controls (Pace & Mood Tuning) */}
-        <div className="pt-2 border-t border-neutral-800/80 flex flex-wrap items-center justify-between gap-3 text-xs">
-          {/* Speaking Pace */}
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-neutral-300 uppercase tracking-wider text-[11px] flex items-center gap-1">
-              ⚡ Speaking Pace:
-            </span>
-            <div className="flex items-center gap-1 bg-neutral-950 p-1 rounded-xl border border-neutral-800">
-              {[
-                { id: "slow", label: "0.85x Slow" },
-                { id: "normal", label: "1.0x Normal" },
-                { id: "brisk", label: "1.15x Brisk" },
-                { id: "fast", label: "1.25x Fast" },
-              ].map((pace) => (
+        {/* Integrated Speaker Style & Directing Directive Deck */}
+        <div className="pt-3 border-t border-neutral-800/80 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <label className="text-xs font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-1.5">
+                <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+                Speaker Style & Directing Directive
+              </label>
+              <p className="text-[11px] text-neutral-400">
+                Direct how <strong className="text-neutral-200">{currentVoiceInfo.name}</strong> speaks (acting tone, whisper, emotion, cadence, accent)
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Style Presets Dropdown */}
+              <div className="relative">
                 <button
-                  key={pace.id}
                   type="button"
-                  onClick={() => setSpeakingPace(pace.id as any)}
-                  className={`px-2 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                    speakingPace === pace.id
-                      ? "bg-indigo-600 text-white shadow-sm font-semibold"
-                      : "text-neutral-400 hover:text-neutral-200"
-                  }`}
+                  onClick={() => setShowStylePresets(!showStylePresets)}
+                  className="px-2.5 py-1 rounded-lg text-xs font-medium bg-neutral-950 hover:bg-neutral-800 text-indigo-300 border border-indigo-500/30 flex items-center gap-1 cursor-pointer"
                 >
-                  {pace.label}
+                  <span>Style Presets</span>
+                  <ChevronDown className="w-3 h-3" />
                 </button>
-              ))}
+
+                {showStylePresets && (
+                  <div className="absolute right-0 top-7 z-20 w-64 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl p-2 space-y-1">
+                    {PRESET_STYLES.map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => {
+                          setStylePrompt(preset.prompt);
+                          setShowStylePresets(false);
+                          if (activeProfileId) setActiveProfileId(null);
+                        }}
+                        className="w-full text-left p-2 rounded-lg hover:bg-neutral-800 transition-colors text-xs cursor-pointer"
+                      >
+                        <div className="font-semibold text-neutral-200">{preset.label}</div>
+                        <div className="text-[11px] text-neutral-400 truncate">{preset.description}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Save Custom Voice Button */}
+              <button
+                type="button"
+                onClick={() => setShowSaveVoiceModal(true)}
+                className="px-3 py-1 rounded-lg text-xs font-bold bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white shadow-sm flex items-center gap-1.5 cursor-pointer"
+                title="Save this directed voice with a custom name of your choice"
+              >
+                <Save className="w-3 h-3" />
+                <span>Save Voice...</span>
+              </button>
+
+              {/* Open Saved Voices Library */}
+              <button
+                type="button"
+                onClick={() => setShowSavedVoicesModal(true)}
+                className="px-2.5 py-1 rounded-lg text-xs font-medium bg-neutral-950 hover:bg-neutral-800 text-neutral-300 border border-neutral-700 flex items-center gap-1 cursor-pointer"
+                title="Browse and manage all saved voice profiles"
+              >
+                <Bookmark className="w-3 h-3 text-amber-400" />
+                <span className="hidden sm:inline">Library</span> ({savedVoices.length})
+              </button>
             </div>
           </div>
 
-          {/* Delivery Mood */}
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-neutral-300 uppercase tracking-wider text-[11px] flex items-center gap-1">
-              🎭 Delivery Mood:
-            </span>
-            <select
-              value={vocalMood}
-              onChange={(e) => setVocalMood(e.target.value)}
-              className="px-2.5 py-1 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-neutral-200 focus:outline-none focus:border-indigo-500 cursor-pointer"
-            >
-              <option value="default">✨ Natural & Neutral</option>
-              <option value="Warm, intimate, and comforting with gentle breathing">🌸 Warm & Intimate</option>
-              <option value="Energetic, bright, and enthusiastic with dynamic delivery">⚡ Dynamic & Upbeat</option>
-              <option value="Deep, cinematic, and dramatic with intense pauses">🎬 Deep & Dramatic</option>
-              <option value="Crisp, authoritative professional news anchor">📡 Authoritative Broadcast</option>
-              <option value="Ultra-calm, whispering tranquil ASMR meditation cadence">🧘‍♀️ Whispering ASMR</option>
-              <option value="Inspiring, visionary keynote speaker with brisk momentum">💡 Visionary Keynote</option>
-            </select>
+          {/* Style Directive Input */}
+          <div className="relative">
+            <input
+              type="text"
+              value={stylePrompt}
+              onChange={(e) => {
+                setStylePrompt(e.target.value);
+                if (activeProfileId) setActiveProfileId(null);
+              }}
+              placeholder="e.g. Warm, slow-paced audiobook narrator with gentle breath and soothing tone"
+              className="w-full px-3.5 py-2.5 bg-neutral-950/80 border border-neutral-800 rounded-xl text-xs sm:text-sm text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-indigo-500/80 transition-colors"
+            />
+            {stylePrompt && (
+              <button
+                type="button"
+                onClick={() => {
+                  setStylePrompt("");
+                  if (activeProfileId) setActiveProfileId(null);
+                }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white p-1"
+                title="Clear style direction"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
-          {/* Video Clip Timing Helper Toggle */}
-          <button
-            type="button"
-            onClick={() => setShowVideoTimingHelper(!showVideoTimingHelper)}
-            className={`px-2.5 py-1 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-              showVideoTimingHelper
-                ? "bg-purple-600 text-white shadow-sm ring-1 ring-purple-400"
-                : "bg-purple-950/40 hover:bg-purple-900/60 text-purple-300 border border-purple-500/30"
-            }`}
-            title="Calculate script word count and timing to fit video clip durations"
-          >
-            <Film className="w-3.5 h-3.5 text-purple-300" />
-            <span>Video Clip Timing</span>
-          </button>
+          {/* Active Profile Info / Quick Save Notification Banner */}
+          {(activeSavedProfile || savedVoiceNotification) && (
+            <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-amber-950/30 border border-amber-500/30 text-xs">
+              <div className="flex items-center gap-2 text-amber-200">
+                <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0" />
+                <span>
+                  {savedVoiceNotification || (
+                    <>
+                      Using custom voice: <strong>{activeSavedProfile?.customName}</strong> ({currentVoiceInfo.name})
+                    </>
+                  )}
+                </span>
+              </div>
+              {activeSavedProfile && (
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowSaveVoiceModal(true)}
+                    className="text-[11px] font-semibold text-amber-300 hover:text-amber-100 underline cursor-pointer"
+                  >
+                    Update Settings
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveProfileId(null)}
+                    className="text-[11px] text-neutral-400 hover:text-neutral-200 cursor-pointer"
+                    title="Detach from saved profile"
+                  >
+                    Detach
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Advanced Voice Delivery Controls (Pace & Mood Tuning + Video Timing Helper) */}
+          <div className="pt-2 flex flex-wrap items-center justify-between gap-3 text-xs">
+            {/* Speaking Pace */}
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-neutral-300 uppercase tracking-wider text-[11px] flex items-center gap-1">
+                ⚡ Speaking Pace:
+              </span>
+              <div className="flex items-center gap-1 bg-neutral-950 p-1 rounded-xl border border-neutral-800">
+                {[
+                  { id: "slow", label: "0.85x Slow" },
+                  { id: "normal", label: "1.0x Normal" },
+                  { id: "brisk", label: "1.15x Brisk" },
+                  { id: "fast", label: "1.25x Fast" },
+                ].map((pace) => (
+                  <button
+                    key={pace.id}
+                    type="button"
+                    onClick={() => {
+                      setSpeakingPace(pace.id as any);
+                      if (activeProfileId) setActiveProfileId(null);
+                    }}
+                    className={`px-2 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                      speakingPace === pace.id
+                        ? "bg-indigo-600 text-white shadow-sm font-semibold"
+                        : "text-neutral-400 hover:text-neutral-200"
+                    }`}
+                  >
+                    {pace.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Delivery Mood */}
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-neutral-300 uppercase tracking-wider text-[11px] flex items-center gap-1">
+                🎭 Delivery Mood:
+              </span>
+              <select
+                value={vocalMood}
+                onChange={(e) => {
+                  setVocalMood(e.target.value);
+                  if (activeProfileId) setActiveProfileId(null);
+                }}
+                className="px-2.5 py-1 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-neutral-200 focus:outline-none focus:border-indigo-500 cursor-pointer"
+              >
+                <option value="default">✨ Natural & Neutral</option>
+                <option value="Warm, intimate, and comforting with gentle breathing">🌸 Warm & Intimate</option>
+                <option value="Energetic, bright, and enthusiastic with dynamic delivery">⚡ Dynamic & Upbeat</option>
+                <option value="Deep, cinematic, and dramatic with intense pauses">🎬 Deep & Dramatic</option>
+                <option value="Crisp, authoritative professional news anchor">📡 Authoritative Broadcast</option>
+                <option value="Ultra-calm, whispering tranquil ASMR meditation cadence">🧘‍♀️ Whispering ASMR</option>
+                <option value="Inspiring, visionary keynote speaker with brisk momentum">💡 Visionary Keynote</option>
+              </select>
+            </div>
+
+            {/* Video Clip Timing Helper Toggle */}
+            <button
+              type="button"
+              onClick={() => setShowVideoTimingHelper(!showVideoTimingHelper)}
+              className={`px-2.5 py-1 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                showVideoTimingHelper
+                  ? "bg-purple-600 text-white shadow-sm ring-1 ring-purple-400"
+                  : "bg-purple-950/40 hover:bg-purple-900/60 text-purple-300 border border-purple-500/30"
+              }`}
+              title="Calculate script word count and timing to fit video clip durations"
+            >
+              <Film className="w-3.5 h-3.5 text-purple-300" />
+              <span>Video Clip Timing</span>
+            </button>
+          </div>
         </div>
 
         {/* Video Clip Timing & Exact Duration Lock Deck */}
@@ -896,56 +1230,22 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
         )}
       </div>
 
-      {/* Script & Voice Direction Workspace */}
+      {/* 2. Script & Audio Timeline Workspace */}
       <div className="bg-neutral-900/80 border border-neutral-800 rounded-2xl p-4 sm:p-5 space-y-4">
-        {/* Style & Persona Direction Bar */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-xs font-bold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
-              <Sliders className="w-3.5 h-3.5 text-indigo-400" />
-              2. Voice Style & Direction
-            </label>
-
-            <div className="relative">
-              <button
-                onClick={() => setShowStylePresets(!showStylePresets)}
-                className="text-xs text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1 cursor-pointer"
-              >
-                <span>Style Presets</span>
-                <ChevronDown className="w-3 h-3" />
-              </button>
-
-              {showStylePresets && (
-                <div className="absolute right-0 top-6 z-20 w-64 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl p-2 space-y-1">
-                  {PRESET_STYLES.map((preset) => (
-                    <button
-                      key={preset.id}
-                      onClick={() => {
-                        setStylePrompt(preset.prompt);
-                        setShowStylePresets(false);
-                      }}
-                      className="w-full text-left p-2 rounded-lg hover:bg-neutral-800 transition-colors text-xs cursor-pointer"
-                    >
-                      <div className="font-semibold text-neutral-200">{preset.label}</div>
-                      <div className="text-[11px] text-neutral-400 truncate">{preset.description}</div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+        {/* Workspace Title */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-2">
+              <FileText className="w-4 h-4 text-indigo-400" />
+              2. Script & Audio Timeline Workspace
+            </h3>
+            <p className="text-xs text-neutral-400 mt-0.5">
+              Type or paste your text, customize timed silences <code className="text-purple-300 font-mono text-[11px]">[pause 2s]</code>, and fine-tune pronunciation.
+            </p>
           </div>
-
-          <input
-            type="text"
-            value={stylePrompt}
-            onChange={(e) => setStylePrompt(e.target.value)}
-            placeholder="e.g. Warm, slow-paced audiobook narrator with gentle breath and soothing tone"
-            className="w-full px-3.5 py-2.5 bg-neutral-950/80 border border-neutral-800 rounded-xl text-sm text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-indigo-500/80 transition-colors"
-          />
         </div>
 
-        {/* Script Editor Header */}
-        <div className="pt-2 border-t border-neutral-800/80">
+        <div>
           {/* Language Selection & Pronunciation Bar */}
           <div className="bg-neutral-950/70 border border-neutral-800 rounded-xl p-2.5 mb-3">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
@@ -1621,6 +1921,34 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
           onClear={onClearAudio}
         />
       </section>
+
+      {/* Save Custom Voice Modal */}
+      <SaveVoiceModal
+        isOpen={showSaveVoiceModal}
+        onClose={() => setShowSaveVoiceModal(false)}
+        currentVoiceId={selectedVoice}
+        currentStylePrompt={stylePrompt}
+        currentSpeakingPace={speakingPace}
+        currentVocalMood={vocalMood}
+        currentModel={selectedModel}
+        activeProfile={activeSavedProfile}
+        onSaved={(profile) => {
+          handleApplyVoiceProfile(profile);
+        }}
+      />
+
+      {/* Saved Voices Library Modal */}
+      <SavedVoicesModal
+        isOpen={showSavedVoicesModal}
+        onClose={() => setShowSavedVoicesModal(false)}
+        activeProfileId={activeProfileId}
+        onSelectProfile={(profile) => {
+          handleApplyVoiceProfile(profile);
+        }}
+        onOpenSaveNewModal={() => {
+          setShowSaveVoiceModal(true);
+        }}
+      />
     </div>
   );
 };

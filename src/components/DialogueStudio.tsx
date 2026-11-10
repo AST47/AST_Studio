@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   Users,
   Plus,
@@ -18,13 +18,15 @@ import {
   ExternalLink,
   X,
   AlertCircle,
+  Star,
 } from "lucide-react";
-import { VoiceName, DialogueTurn, GeneratedAudioItem, QuotaStatus, SupportedLanguage } from "../types/tts";
+import { VoiceName, DialogueTurn, GeneratedAudioItem, QuotaStatus, SupportedLanguage, SavedVoiceProfile } from "../types/tts";
 import { VOICES_CATALOG, DIALOGUE_TEMPLATES } from "../data/voices";
 import { LANGUAGES, detectLanguageFromText } from "../data/languages";
 import { requestTts, requestScriptEnhance } from "../services/api";
 import { recordQuotaExceeded, clearQuotaCooldown } from "../services/quotaTracker";
 import { verbalizeTextForLanguage } from "../services/clientLangUtils";
+import { getSavedVoices, subscribeToSavedVoices } from "../services/savedVoicesService";
 import { AudioPlayer } from "./AudioPlayer";
 
 interface DialogueStudioProps {
@@ -55,6 +57,15 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({
     voice: VoiceName;
     style: string;
   }>(DIALOGUE_TEMPLATES[0].speaker2);
+
+  // Custom Saved Voices Library
+  const [savedVoices, setSavedVoices] = useState<SavedVoiceProfile[]>(() => getSavedVoices());
+
+  useEffect(() => {
+    setSavedVoices(getSavedVoices());
+    const unsub = subscribeToSavedVoices((updated) => setSavedVoices(updated));
+    return () => unsub();
+  }, []);
 
   const [turns, setTurns] = useState<DialogueTurn[]>(
     DIALOGUE_TEMPLATES[0].turns.map((t, idx) => ({
@@ -449,7 +460,36 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({
               <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider">
                 Speaker A
               </span>
-              <span className="text-[11px] font-mono text-neutral-400">Host / Lead</span>
+              <div className="flex items-center gap-2">
+                {savedVoices.length > 0 && (
+                  <select
+                    onChange={(e) => {
+                      const profile = savedVoices.find((p) => p.id === e.target.value);
+                      if (profile) {
+                        setSpeaker1({
+                          name: profile.customName,
+                          voice: profile.voiceId,
+                          style: profile.stylePrompt || "",
+                        });
+                      }
+                      e.target.value = "";
+                    }}
+                    defaultValue=""
+                    className="text-[11px] bg-neutral-900 border border-amber-500/30 text-amber-300 rounded px-2 py-0.5 focus:outline-none cursor-pointer"
+                    title="Load voice, name, and style from your saved voices"
+                  >
+                    <option value="" disabled>
+                      ⭐ Load Saved Voice...
+                    </option>
+                    {savedVoices.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.customName} ({p.voiceId})
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <span className="text-[11px] font-mono text-neutral-400">Host / Lead</span>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-2">
@@ -513,7 +553,36 @@ export const DialogueStudio: React.FC<DialogueStudioProps> = ({
               <span className="text-xs font-bold text-purple-400 uppercase tracking-wider">
                 Speaker B
               </span>
-              <span className="text-[11px] font-mono text-neutral-400">Co-Host / Guest</span>
+              <div className="flex items-center gap-2">
+                {savedVoices.length > 0 && (
+                  <select
+                    onChange={(e) => {
+                      const profile = savedVoices.find((p) => p.id === e.target.value);
+                      if (profile) {
+                        setSpeaker2({
+                          name: profile.customName,
+                          voice: profile.voiceId,
+                          style: profile.stylePrompt || "",
+                        });
+                      }
+                      e.target.value = "";
+                    }}
+                    defaultValue=""
+                    className="text-[11px] bg-neutral-900 border border-amber-500/30 text-amber-300 rounded px-2 py-0.5 focus:outline-none cursor-pointer"
+                    title="Load voice, name, and style from your saved voices"
+                  >
+                    <option value="" disabled>
+                      ⭐ Load Saved Voice...
+                    </option>
+                    {savedVoices.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.customName} ({p.voiceId})
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <span className="text-[11px] font-mono text-neutral-400">Co-Host / Guest</span>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-2">
