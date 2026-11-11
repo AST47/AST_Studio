@@ -25,6 +25,7 @@ import { VOICES_CATALOG } from "../data/voices";
 import { analyzeAndMatchVoice } from "../services/voiceMatchingService";
 import { saveVoiceProfile } from "../services/savedVoicesService";
 import { requestTts } from "../services/api";
+import { prepareAudioForAcousticAnalysis } from "../services/audioDownsampler";
 
 interface VoiceCloneModalProps {
   isOpen: boolean;
@@ -142,14 +143,22 @@ export const VoiceCloneModal: React.FC<VoiceCloneModalProps> = ({
       setAudioDurationSec(Math.round(tempAudio.duration || 0));
     };
 
-    // Convert to base64
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      const base64 = result.split(",")[1];
-      setAudioBase64(base64);
-    };
-    reader.readAsDataURL(file);
+    // Pre-process & downsample audio to 16kHz WAV immediately
+    prepareAudioForAcousticAnalysis(file, 8)
+      .then((downsampled) => {
+        setAudioBase64(downsampled.base64);
+        setAudioMimeType("audio/wav");
+      })
+      .catch((e) => {
+        console.warn("Pre-downsample failed, using raw audio:", e);
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          const base64 = result.split(",")[1];
+          setAudioBase64(base64);
+        };
+        reader.readAsDataURL(file);
+      });
   };
 
   // Handle Drag & Drop
@@ -177,20 +186,28 @@ export const VoiceCloneModal: React.FC<VoiceCloneModalProps> = ({
       mediaRecorder.onstop = () => {
         const mime = mediaRecorder.mimeType || "audio/webm";
         const audioBlob = new Blob(audioChunksRef.current, { type: mime });
-        setAudioMimeType(mime);
+        setAudioMimeType("audio/wav");
         setAudioFileName(`Microphone_Recording_${new Date().toLocaleTimeString().replace(/:/g, "-")}`);
 
         const blobUrl = URL.createObjectURL(audioBlob);
         setAudioBlobUrl(blobUrl);
 
-        // Read base64
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const res = reader.result as string;
-          const b64 = res.split(",")[1];
-          setAudioBase64(b64);
-        };
-        reader.readAsDataURL(audioBlob);
+        // Pre-downsample recorded speech to 16kHz WAV
+        prepareAudioForAcousticAnalysis(audioBlob, 8)
+          .then((downsampled) => {
+            setAudioBase64(downsampled.base64);
+            setAudioMimeType("audio/wav");
+          })
+          .catch((e) => {
+            console.warn("Downsampling recorded audio failed, using raw blob:", e);
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const res = reader.result as string;
+              const b64 = res.split(",")[1];
+              setAudioBase64(b64);
+            };
+            reader.readAsDataURL(audioBlob);
+          });
 
         // Stop all tracks
         stream.getTracks().forEach((track) => track.stop());
@@ -237,17 +254,17 @@ export const VoiceCloneModal: React.FC<VoiceCloneModalProps> = ({
     setIsAnalyzing(true);
     setErrorMessage(null);
 
-    // Progress step simulation for responsive UX
-    setAnalysisStepText("Extracting acoustic frequencies & vocal timbre...");
+    // Dynamic progress indicators
+    setAnalysisStepText("Optimizing acoustic profile (16kHz mono snippet)...");
     const t1 = setTimeout(() => {
       setAnalysisStepText("Analyzing pitch, register & cadence with Gemini...");
-    }, 1200);
+    }, 800);
     const t2 = setTimeout(() => {
       setAnalysisStepText("Matching against 30 Google Gemini Studio voices...");
-    }, 2800);
+    }, 2000);
     const t3 = setTimeout(() => {
       setAnalysisStepText("Crafting reverse-engineered style directive...");
-    }, 4500);
+    }, 3500);
 
     try {
       const result = await analyzeAndMatchVoice(audioBase64, audioMimeType);
@@ -258,9 +275,14 @@ export const VoiceCloneModal: React.FC<VoiceCloneModalProps> = ({
       setSpeakingPace(result.detectedPace || "normal");
     } catch (err: any) {
       console.error("Voice matching failed:", err);
-      setErrorMessage(
-        err.message || "Failed to analyze voice sample. Please ensure your Gemini API key is valid."
-      );
+      const rawMsg = String(err?.message || err || "");
+      if (rawMsg.includes("503") || rawMsg.includes("Deadline expired") || rawMsg.includes("UNAVAILABLE")) {
+        setErrorMessage("Google's audio analysis service experienced high load. We have prepared a fast 6-second acoustic profile — please click 'Analyze & Match' once more.");
+      } else {
+        setErrorMessage(
+          err.message || "Failed to analyze voice sample. Please ensure your Gemini API key is valid."
+        );
+      }
     } finally {
       clearTimeout(t1);
       clearTimeout(t2);

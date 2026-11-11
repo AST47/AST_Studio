@@ -1,7 +1,8 @@
-import { GoogleGenAI, Type, Schema } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { VoiceName, VoiceCloneMatchResult } from "../types/tts";
 import { VOICES_CATALOG } from "../data/voices";
 import { getStoredApiKey, getStoredApiKeys, rotateToNextApiKey, isAutoRotateEnabled } from "./clientGeminiService";
+import { prepareAudioForAcousticAnalysis } from "./audioDownsampler";
 
 const GOOGLE_BASE_VOICES_BRIEF = VOICES_CATALOG.filter(v => v.category === "official").map(v => ({
   id: v.id,
@@ -17,29 +18,38 @@ Your objective: analyze the reference human speech recording and find the closes
 Available 30 Google Gemini Studio Voices:
 ${GOOGLE_BASE_VOICES_BRIEF.map(v => `- "${v.id}": ${v.name} (${v.gender}), tone: ${v.tone}. ${v.description}`).join("\n")}
 
-Respond ONLY with a JSON object adhering to this schema:
+Respond ONLY with a valid JSON object adhering strictly to this schema:
 {
   "detectedGender": "male" | "female" | "neutral" | "child",
-  "detectedPitch": string, // e.g. "Low resonant baritone with deep chest register (approx 95-120 Hz)"
-  "detectedTimbre": string, // e.g. "Warm, slightly gravelly with close-mic proximity effect and soft sibilance"
+  "detectedPitch": string,
+  "detectedTimbre": string,
   "detectedPace": "normal" | "slow" | "brisk" | "fast",
-  "detectedMood": string, // e.g. "Intimate, thoughtful, slow-paced storytelling with gentle breaths"
-  "matchedVoiceId": string, // Must be exactly one of the 30 voice IDs above (e.g. "Puck", "Charon", "Kore", "Fenrir", "Aoede", "Zephyr", etc.)
-  "matchScorePercent": number, // 70 to 98 percent match score
-  "matchExplanation": string, // Brief 1-2 sentence rationale explaining why this base voice matches the reference audio acoustics
-  "recommendedStylePrompt": string, // Highly descriptive TTS prompt directing tone, acting, breathing, and cadence to mirror the reference audio
-  "suggestedCustomName": string // Catchy title for this cloned voice profile (e.g. "Deep Cinematic Storyteller", "Warm Podcast Host")
+  "detectedMood": string,
+  "matchedVoiceId": string,
+  "matchScorePercent": number,
+  "matchExplanation": string,
+  "recommendedStylePrompt": string,
+  "suggestedCustomName": string
 }`;
 
 export async function analyzeAndMatchVoice(
-  audioBase64: string,
-  mimeType: string,
+  rawAudioBase64: string,
+  rawMimeType: string,
   customApiKey?: string
 ): Promise<VoiceCloneMatchResult> {
-  // Clean base64 string
-  const cleanBase64 = audioBase64.replace(/^data:audio\/\w+;base64,/, "");
+  // 1. Optimize audio: downsample to 16kHz mono WAV (max 8-10s) to prevent deadline timeouts
+  let optimizedBase64 = rawAudioBase64.replace(/^data:audio\/\w+;base64,/, "");
+  let optimizedMime = rawMimeType || "audio/wav";
 
-  // 1. Try server-side proxy route first (when running dev/node server)
+  try {
+    const downsampled = await prepareAudioForAcousticAnalysis(optimizedBase64, 8);
+    optimizedBase64 = downsampled.base64;
+    optimizedMime = downsampled.mimeType;
+  } catch (err) {
+    console.warn("[VoiceMatching] Downsampling skipped, using raw audio:", err);
+  }
+
+  // 2. Try server-side proxy route first (when running on full-stack dev/node server)
   try {
     const activeKey = customApiKey || getStoredApiKey();
     const headers: Record<string, string> = {
@@ -49,25 +59,30 @@ export async function analyzeAndMatchVoice(
       headers["x-gemini-api-key"] = activeKey;
     }
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s timeout
+
     const response = await fetch("/api/clone-match-voice", {
       method: "POST",
       headers,
+      signal: controller.signal,
       body: JSON.stringify({
-        audioBase64: cleanBase64,
-        mimeType: mimeType || "audio/wav",
+        audioBase64: optimizedBase64,
+        mimeType: optimizedMime,
       }),
     });
+    clearTimeout(timeoutId);
 
     if (response.ok) {
       const data = await response.json();
       return sanitizeMatchResult(data);
     }
   } catch (err) {
-    console.warn("[VoiceMatching] Server proxy failed or not present, attempting client fallback:", err);
+    console.warn("[VoiceMatching] Server proxy failed or timed out, trying direct client analysis:", err);
   }
 
-  // 2. Direct client-side Gemini fallback (works on static hosting like GitHub Pages)
-  return await analyzeVoiceWithGeminiClient(cleanBase64, mimeType, customApiKey);
+  // 3. Direct client-side Gemini call (with multi-model fallback: gemini-3.8-flash -> gemini-2.5-flash)
+  return await analyzeVoiceWithGeminiClient(optimizedBase64, optimizedMime, customApiKey);
 }
 
 export async function analyzeVoiceWithGeminiClient(
@@ -90,54 +105,81 @@ export async function analyzeVoiceWithGeminiClient(
 
   for (let i = 0; i < keysToTry.length; i++) {
     const key = keysToTry[i];
-    try {
-      const ai = new GoogleGenAI({ apiKey: key });
+    const ai = new GoogleGenAI({ apiKey: key });
 
-      // Clean mimeType
-      let cleanMime = mimeType || "audio/wav";
-      if (cleanMime.includes(";")) {
-        cleanMime = cleanMime.split(";")[0].trim();
-      }
+    // Clean mimeType
+    let cleanMime = mimeType || "audio/wav";
+    if (cleanMime.includes(";")) {
+      cleanMime = cleanMime.split(";")[0].trim();
+    }
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                inlineData: {
-                  mimeType: cleanMime,
-                  data: cleanBase64,
+    // Try models: gemini-3.8-flash first, and if 503/deadline/timeout, fallback to gemini-2.5-flash
+    const modelsToTry = ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-3.1-flash-lite"];
+
+    for (const modelName of modelsToTry) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: cleanMime,
+                    data: cleanBase64,
+                  },
                 },
-              },
-              {
-                text: `${SYSTEM_ACOUSTIC_PROMPT}\n\nPlease analyze the vocal characteristics in this audio clip, match it to the closest Google base voice, and generate the directing style.`,
-              },
-            ],
+                {
+                  text: `${SYSTEM_ACOUSTIC_PROMPT}\n\nPlease analyze the vocal characteristics in this 16kHz speech snippet, match it to the closest Google base voice, and generate the directing style.`,
+                },
+              ],
+            },
+          ],
+          config: {
+            responseMimeType: "application/json",
+            temperature: 0.2,
           },
-        ],
-        config: {
-          responseMimeType: "application/json",
-          temperature: 0.2,
-        },
-      });
+        });
 
-      const responseText = response.text || "";
-      if (!responseText.trim()) {
-        throw new Error("No response returned from Gemini audio analysis.");
-      }
+        const responseText = response.text || "";
+        if (!responseText.trim()) {
+          throw new Error("No response returned from Gemini audio analysis.");
+        }
 
-      const parsed = JSON.parse(responseText);
-      return sanitizeMatchResult(parsed);
-    } catch (err: any) {
-      lastError = err;
-      console.warn(`[VoiceMatching] Analysis failed with key index ${i}:`, err);
-      if (isAutoRotateEnabled() && i < keysToTry.length - 1) {
-        rotateToNextApiKey();
-        continue;
+        const parsed = JSON.parse(responseText);
+        return sanitizeMatchResult(parsed);
+      } catch (err: any) {
+        lastError = err;
+        const errMsg = String(err?.message || err || "").toLowerCase();
+        const isTimeoutOrUnavailable =
+          errMsg.includes("503") ||
+          errMsg.includes("deadline expired") ||
+          errMsg.includes("unavailable") ||
+          errMsg.includes("timeout") ||
+          errMsg.includes("resource_exhausted") ||
+          errMsg.includes("429");
+
+        console.warn(`[VoiceMatching] Model ${modelName} failed with key ${i}:`, err);
+
+        // If temporary timeout or 503 on 3.8-flash, try next faster model before switching keys
+        if (isTimeoutOrUnavailable && modelName !== modelsToTry[modelsToTry.length - 1]) {
+          console.log(`[VoiceMatching] Retrying with faster model ${modelsToTry[modelsToTry.indexOf(modelName) + 1]}...`);
+          continue;
+        }
+        break; // try next key
       }
     }
+
+    if (isAutoRotateEnabled() && i < keysToTry.length - 1) {
+      rotateToNextApiKey();
+    }
+  }
+
+  // Format error for user
+  const rawMsg = String(lastError?.message || lastError || "");
+  if (rawMsg.includes("503") || rawMsg.includes("Deadline expired") || rawMsg.includes("UNAVAILABLE")) {
+    throw new Error("Google Gemini audio service is experiencing temporary high traffic. Please try again with a short 5-10 second clip.");
   }
 
   throw lastError || new Error("Voice analysis failed across all available keys.");
@@ -150,7 +192,6 @@ function sanitizeMatchResult(raw: any): VoiceCloneMatchResult {
   if (raw.matchedVoiceId && validVoiceIds.includes(raw.matchedVoiceId)) {
     matchedVoiceId = raw.matchedVoiceId;
   } else if (raw.matchedVoiceId) {
-    // Attempt case-insensitive lookup
     const found = validVoiceIds.find(v => v.toLowerCase() === String(raw.matchedVoiceId).toLowerCase());
     if (found) matchedVoiceId = found;
   }

@@ -520,30 +520,44 @@ Respond ONLY with a JSON object adhering to this schema:
 
 Analyze the vocal acoustics in this audio recording and match it to the closest Google base voice.`;
 
-  const response = await clientAi.models.generateContent({
-    model: "gemini-3.8-flash",
-    contents: [
-      {
-        role: "user",
-        parts: [
+  const modelsToTry = ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-3.1-flash-lite"];
+  let lastErr: any = null;
+
+  for (const modelName of modelsToTry) {
+    try {
+      const response = await clientAi.models.generateContent({
+        model: modelName,
+        contents: [
           {
-            inlineData: {
-              mimeType: cleanMime,
-              data: audioBase64,
-            },
-          },
-          {
-            text: prompt,
+            role: "user",
+            parts: [
+              {
+                inlineData: {
+                  mimeType: cleanMime,
+                  data: audioBase64,
+                },
+              },
+              {
+                text: prompt,
+              },
+            ],
           },
         ],
-      },
-    ],
-    config: {
-      responseMimeType: "application/json",
-      temperature: 0.2,
-    },
-  });
+        config: {
+          responseMimeType: "application/json",
+          temperature: 0.2,
+        },
+      });
 
-  const responseText = response.text || "";
-  return JSON.parse(responseText);
+      const responseText = response.text || "";
+      if (responseText.trim()) {
+        return JSON.parse(responseText);
+      }
+    } catch (err: any) {
+      lastErr = err;
+      console.warn(`[server matchVoiceAcoustics] Model ${modelName} failed, trying fallback:`, err?.message || err);
+    }
+  }
+
+  throw lastErr || new Error("Failed to analyze voice acoustics across all available models.");
 }
