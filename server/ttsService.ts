@@ -475,3 +475,75 @@ export async function enhanceScript(params: {
     }
   }
 }
+
+export async function matchVoiceAcoustics(
+  audioBase64: string,
+  mimeType: string,
+  customApiKey?: string
+) {
+  const activeKey = customApiKey || apiKey || "";
+  if (!activeKey) {
+    throw new Error("No Gemini API key configured.");
+  }
+
+  const clientAi = new GoogleGenAI({
+    apiKey: activeKey,
+    httpOptions: {
+      headers: {
+        "User-Agent": "aistudio-build",
+      },
+    },
+  });
+
+  let cleanMime = mimeType || "audio/wav";
+  if (cleanMime.includes(";")) cleanMime = cleanMime.split(";")[0].trim();
+
+  const prompt = `You are a master audio acoustic engineer and vocal casting director for Google Gemini Text-to-Speech (TTS).
+Your task is to analyze the reference human speech recording and find the closest matching Google Studio base voice, while reverse-engineering the exact directing style prompt required to recreate that speaker's sound, cadence, and timbre.
+
+Available 30 Google Gemini Studio Voices:
+${VOICES_CATALOG.filter(v => v.category === "official").map(v => `- "${v.id}": ${v.name} (${v.gender}), tone: ${v.tone}. ${v.description}`).join("\n")}
+
+Respond ONLY with a JSON object adhering to this schema:
+{
+  "detectedGender": "male" | "female" | "neutral" | "child",
+  "detectedPitch": string,
+  "detectedTimbre": string,
+  "detectedPace": "normal" | "slow" | "brisk" | "fast",
+  "detectedMood": string,
+  "matchedVoiceId": string,
+  "matchScorePercent": number,
+  "matchExplanation": string,
+  "recommendedStylePrompt": string,
+  "suggestedCustomName": string
+}
+
+Analyze the vocal acoustics in this audio recording and match it to the closest Google base voice.`;
+
+  const response = await clientAi.models.generateContent({
+    model: "gemini-3.8-flash",
+    contents: [
+      {
+        role: "user",
+        parts: [
+          {
+            inlineData: {
+              mimeType: cleanMime,
+              data: audioBase64,
+            },
+          },
+          {
+            text: prompt,
+          },
+        ],
+      },
+    ],
+    config: {
+      responseMimeType: "application/json",
+      temperature: 0.2,
+    },
+  });
+
+  const responseText = response.text || "";
+  return JSON.parse(responseText);
+}

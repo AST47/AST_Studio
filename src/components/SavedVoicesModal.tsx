@@ -12,6 +12,7 @@ import {
   Plus,
   RotateCcw,
   CheckCircle2,
+  Wand2,
 } from "lucide-react";
 import { SavedVoiceProfile, VoiceName } from "../types/tts";
 import { VOICES_CATALOG } from "../data/voices";
@@ -29,6 +30,7 @@ interface SavedVoicesModalProps {
   activeProfileId?: string | null;
   onSelectProfile: (profile: SavedVoiceProfile) => void;
   onOpenSaveNewModal?: () => void;
+  onOpenCloneModal?: () => void;
 }
 
 export const SavedVoicesModal: React.FC<SavedVoicesModalProps> = ({
@@ -37,6 +39,7 @@ export const SavedVoicesModal: React.FC<SavedVoicesModalProps> = ({
   activeProfileId,
   onSelectProfile,
   onOpenSaveNewModal,
+  onOpenCloneModal,
 }) => {
   const [profiles, setProfiles] = useState<SavedVoiceProfile[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -127,6 +130,21 @@ export const SavedVoicesModal: React.FC<SavedVoicesModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {onOpenCloneModal && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenCloneModal();
+                }}
+                className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                title="Match reference audio and clone voice acoustics"
+              >
+                <Wand2 className="w-3.5 h-3.5 text-purple-200" />
+                <span>Clone from Audio</span>
+              </button>
+            )}
+
             {onOpenSaveNewModal && (
               <button
                 type="button"

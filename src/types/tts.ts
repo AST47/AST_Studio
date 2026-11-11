@@ -130,4 +130,15 @@ export interface SavedVoiceProfile {
   isBuiltIn?: boolean;
 }
 
-
+export interface VoiceCloneMatchResult {
+  detectedGender: "male" | "female" | "neutral" | "child";
+  detectedPitch: string;
+  detectedTimbre: string;
+  detectedPace: "normal" | "slow" | "brisk" | "fast";
+  detectedMood: string;
+  matchedVoiceId: VoiceName;
+  matchScorePercent: number;
+  matchExplanation: string;
+  recommendedStylePrompt: string;
+  suggestedCustomName: string;
+}

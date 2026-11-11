@@ -47,6 +47,7 @@ import { verbalizeTextForLanguage } from "../services/clientLangUtils";
 import { getSavedVoices, subscribeToSavedVoices } from "../services/savedVoicesService";
 import { SaveVoiceModal } from "./SaveVoiceModal";
 import { SavedVoicesModal } from "./SavedVoicesModal";
+import { VoiceCloneModal } from "./VoiceCloneModal";
 import {
   parseScriptPauseSegments,
   hasSilenceTags,
@@ -101,6 +102,7 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
   const [showSaveVoiceModal, setShowSaveVoiceModal] = useState<boolean>(false);
   const [showSavedVoicesModal, setShowSavedVoicesModal] = useState<boolean>(false);
   const [showSavedVoicesDropdown, setShowSavedVoicesDropdown] = useState<boolean>(false);
+  const [showVoiceCloneModal, setShowVoiceCloneModal] = useState<boolean>(false);
   const [savedVoiceNotification, setSavedVoiceNotification] = useState<string | null>(null);
 
   // Subscribe to persistent storage updates
@@ -504,16 +506,29 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
                 <div className="absolute right-0 top-9 z-30 w-72 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl p-2 space-y-1">
                   <div className="flex items-center justify-between px-2 py-1 text-[11px] font-bold text-neutral-400 uppercase tracking-wider border-b border-neutral-800">
                     <span>Saved Voice Library</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowSavedVoicesDropdown(false);
-                        setShowSaveVoiceModal(true);
-                      }}
-                      className="text-amber-400 hover:text-amber-300 flex items-center gap-1 font-semibold normal-case cursor-pointer"
-                    >
-                      <Plus className="w-3 h-3" /> Save Current
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowSavedVoicesDropdown(false);
+                          setShowVoiceCloneModal(true);
+                        }}
+                        className="text-purple-400 hover:text-purple-300 flex items-center gap-1 font-semibold normal-case cursor-pointer"
+                        title="Upload or record reference speech to clone/match voice acoustics"
+                      >
+                        <Wand2 className="w-3 h-3 text-purple-300" /> Clone
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowSavedVoicesDropdown(false);
+                          setShowSaveVoiceModal(true);
+                        }}
+                        className="text-amber-400 hover:text-amber-300 flex items-center gap-1 font-semibold normal-case cursor-pointer"
+                      >
+                        <Plus className="w-3 h-3" /> Save Current
+                      </button>
+                    </div>
                   </div>
 
                   <div className="max-h-60 overflow-y-auto space-y-1 pt-1">
@@ -738,15 +753,25 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 max-h-72 overflow-y-auto p-1">
               {voiceFilterTab === "saved" ? (
                 filteredSavedVoices.length === 0 ? (
-                  <div className="col-span-full py-8 text-center text-xs text-neutral-400 space-y-2">
+                  <div className="col-span-full py-8 text-center text-xs text-neutral-400 space-y-3">
                     <p>No saved voice profiles matching "{voiceSearchQuery}".</p>
-                    <button
-                      type="button"
-                      onClick={() => setShowSaveVoiceModal(true)}
-                      className="px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 font-semibold cursor-pointer"
-                    >
-                      + Save Current Settings as Voice Profile
-                    </button>
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowVoiceCloneModal(true)}
+                        className="px-3 py-1.5 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30 hover:bg-purple-500/30 font-semibold cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Wand2 className="w-3.5 h-3.5 text-purple-300" />
+                        <span>Clone / Match from Audio Sample</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowSaveVoiceModal(true)}
+                        className="px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 font-semibold cursor-pointer"
+                      >
+                        + Save Current Settings
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   filteredSavedVoices.map((profile) => {
@@ -873,6 +898,17 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* AI Voice Clone & Match Button */}
+              <button
+                type="button"
+                onClick={() => setShowVoiceCloneModal(true)}
+                className="px-3 py-1 rounded-lg text-xs font-bold bg-gradient-to-r from-purple-600 via-indigo-600 to-indigo-500 hover:from-purple-500 hover:to-indigo-400 text-white shadow-sm flex items-center gap-1.5 cursor-pointer transition-all"
+                title="Upload or record reference speech to clone and match against Google's 30 Studio voices"
+              >
+                <Wand2 className="w-3 h-3 text-purple-200" />
+                <span>Clone / Match Voice...</span>
+              </button>
 
               {/* Save Custom Voice Button */}
               <button
@@ -1948,6 +1984,19 @@ export const SoloStudio: React.FC<SoloStudioProps> = ({
         onOpenSaveNewModal={() => {
           setShowSaveVoiceModal(true);
         }}
+        onOpenCloneModal={() => {
+          setShowVoiceCloneModal(true);
+        }}
+      />
+
+      {/* Voice Matcher & Clone Studio Modal */}
+      <VoiceCloneModal
+        isOpen={showVoiceCloneModal}
+        onClose={() => setShowVoiceCloneModal(false)}
+        onApplyClonedVoice={(profile) => {
+          handleApplyVoiceProfile(profile);
+        }}
+        onOpenApiKeyModal={onOpenApiKeyModal}
       />
     </div>
   );

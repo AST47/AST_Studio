@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import {
   generateSpeech,
   enhanceScript,
+  matchVoiceAcoustics,
   VOICES,
   GenerateTtsParams,
 } from "./ttsService.ts";
@@ -265,3 +266,36 @@ apiRouter.post("/enhance-script", async (req, res) => {
     });
   }
 });
+
+// Clone & Match voice from reference audio
+apiRouter.post("/clone-match-voice", async (req, res) => {
+  try {
+    const { audioBase64, mimeType } = req.body;
+    if (!audioBase64) {
+      return res.status(400).json({ error: "audioBase64 is required." });
+    }
+
+    const customApiKey =
+      (req.headers["x-gemini-api-key"] as string) ||
+      (req.body as any)?.customApiKey ||
+      undefined;
+
+    recordApiCall();
+    const result = await matchVoiceAcoustics(audioBase64, mimeType, customApiKey);
+    res.json(result);
+  } catch (error: any) {
+    console.error("Voice matching error:", error);
+    const parsed = formatGeminiError(error);
+    if (parsed.isQuotaExceeded) {
+      recordQuotaErrorOccurred(parsed.retryDelaySeconds);
+    }
+    res.status(parsed.isQuotaExceeded ? 429 : 500).json({
+      error: parsed.message,
+      isQuotaExceeded: parsed.isQuotaExceeded,
+      retryDelaySeconds: parsed.retryDelaySeconds,
+      details: parsed.details,
+      quotaStatus: getQuotaStatus(),
+    });
+  }
+});
+
